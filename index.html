@@ -315,6 +315,31 @@
   .pdf-preview.theme-elegant{font-family:Georgia,'Times New Roman',serif}
   .pdf-preview.theme-elegant h1{font-family:Georgia,serif;font-style:italic;font-weight:400}
   .pdf-preview.theme-elegant table.items th{font-style:italic;text-transform:none;letter-spacing:0;font-size:10pt}
+
+  /* Hankemacht-Theme: minimalistisch, mit Logo oben zentriert */
+  .pdf-preview.theme-hankemacht{font-family:Helvetica,Arial,sans-serif;padding:30px 40px 70px;position:relative;color:#000}
+  .pdf-preview.theme-hankemacht .hm-footer-info{position:absolute;bottom:20px;left:40px;right:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444}
+  .pdf-preview.theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
+  .pdf-preview.theme-hankemacht .hm-foot-col div{line-height:1.4}
+  .pdf-preview.theme-hankemacht .hm-logo{display:flex;justify-content:center;margin:20px 0 10px}
+  .pdf-preview.theme-hankemacht .hm-logo svg{width:240px;height:auto}
+  .pdf-preview.theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-top:10px;margin-bottom:18px}
+  .pdf-preview.theme-hankemacht .hm-header-info div{line-height:1.4}
+  .pdf-preview.theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
+  .pdf-preview.theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
+  .pdf-preview.theme-hankemacht .hm-h1{font-size:16pt;font-weight:700;letter-spacing:2px;margin:24px 0 14px;text-transform:uppercase;color:#000}
+  .pdf-preview.theme-hankemacht .hm-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10pt;margin-bottom:4px}
+  .pdf-preview.theme-hankemacht .hm-intro{margin:14px 0;font-size:10pt;line-height:1.5}
+  .pdf-preview.theme-hankemacht table.hm-items{width:100%;border-collapse:collapse;margin-top:22px;font-size:10pt}
+  .pdf-preview.theme-hankemacht table.hm-items th{text-align:left;padding:8px 6px;border-bottom:1px solid #000;font-weight:700;font-size:10pt}
+  .pdf-preview.theme-hankemacht table.hm-items th.r{text-align:right}
+  .pdf-preview.theme-hankemacht table.hm-items td{padding:6px;font-variant-numeric:tabular-nums}
+  .pdf-preview.theme-hankemacht table.hm-items td.r{text-align:right}
+  .pdf-preview.theme-hankemacht table.hm-items tr.hm-subtotal td{border-top:1px solid #000;padding-top:8px}
+  .pdf-preview.theme-hankemacht table.hm-items tr.hm-grand td{font-size:11pt;padding-bottom:8px}
+  .pdf-preview.theme-hankemacht .hm-rights{margin-top:28px;font-size:9pt;line-height:1.5;color:#333}
+  .pdf-preview.theme-hankemacht .hm-terms{margin-top:18px;font-size:10pt;line-height:1.5}
+  .pdf-preview.theme-hankemacht .hm-footer-note{margin-top:14px;font-size:9pt;font-style:italic;color:#555}
 </style>
 </head>
 <body>
@@ -396,6 +421,7 @@ const DEFAULT_SETTINGS = {
   paymentTermsDays:14, invoicePrefix:'', invoiceCounter:1,
   invoiceFooterText:'Vielen Dank für die gute Zusammenarbeit.',
   invoiceTheme:'classic', invoiceAccent:'#2F5344',
+  rightsTransferText:'',
   // Dropbox-Sync
   dbxAppKey:'', dbxRefreshToken:'', dbxAutoSync:true,
   dbxPath:'/hankebuch-daten.json',
@@ -413,6 +439,8 @@ const VIEWS = {
   stats:{label:'Statistik',icon:'chart'},
   deadlines:{label:'Termine',icon:'cal'},
 };
+
+const HANKEMACHT_LOGO_SVG = `<svg version="1.1" id="Ebene_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1521.9 900" style="enable-background:new 0 0 1521.9 900;" xml:space="preserve"> <style type="text/css"> .st0{enable-background:new ;} .st1{fill:#9C756F;} .st2{fill:none;} .st3{fill:none;stroke:#000000;stroke-width:4.5068;stroke-miterlimit:10;} </style> <g> <g class="st0"> <path d="M150.3,460.4c8.2,1,16.8,1.7,25.8,2c9.1,0.4,18.1,0.3,27.3-0.3c9.1-0.6,18.1-1.7,26.9-3.4c8.8-1.6,16.8-3.9,24.2-6.9 c5.5-9.9,10.8-18.9,16-26.9c5.2-8,10.2-14.8,14.9-20.4c0.8-1,1.9-2.2,3.5-3.6s3.3-2.9,5.1-4.4c1.9-1.5,3.7-2.7,5.5-3.6 c1.9-1,3.5-1.5,5.1-1.5c2.1,0.4,3.5,1.2,4.2,2.3c0.7,1.2,1,2.5,1,4.1c0,1.8-0.4,3.8-1.2,6.3s-1.7,4.8-2.6,7c-1,2.2-2,4.2-2.9,6 c-1,1.8-1.7,3-2,3.8c-4.3,6.8-9.4,12.8-15.5,18c-6,5.2-12.5,9.4-19.3,12.7c-12.8,22.8-25.4,47.4-37.8,74 c-12.4,26.6-24.4,52.8-36.1,78.7c-3.1,7-6.1,13.9-8.9,20.6c-2.8,6.7-5.9,13.5-9.2,20.3c2.9-0.4,5.7-0.6,8.5-0.6c2.7,0,5.4,0,8.2,0 c6.4,0,12.7,0.2,18.8,0.7c6.1,0.5,12.3,1,18.5,1.6c6.2,0.6,12.4,1.1,18.4,1.6s12.2,0.7,18.4,0.7c1.4,0,2.7,0,3.9,0 c1.3,0,2.6-0.1,3.9-0.3l27.7-53.1c10.9-20.6,21.8-41.5,32.5-62.6s21.3-42.3,31.4-63.5c1-1,1.8-1.5,2.3-1.5h6.1 c0.8,0.4,1.4,0.8,1.8,1.2s0.6,1.2,0.6,2.3c-9.9,20.4-20,40.7-30.2,60.7c-10.2,20-20.6,40.1-31.1,60.1c-4.7,9.3-9.3,18.5-13.9,27.4 s-9.3,18.1-14.2,27.4c5.6-1.2,11-2.9,16.2-5.2c5.1-2.3,10.1-5.5,14.7-9.6c4.7-4.1,9-9.2,12.8-15.5c3.9-6.2,7.3-13.7,10.2-22.5 c0.6-0.6,1.3-0.9,2-0.9c1,0,1.7,0.2,2.2,0.6c0.5,0.4,0.7,1.4,0.7,2.9c-3.5,9.9-7.4,18.3-11.8,25.1s-9.2,12.4-14.5,16.8 s-10.9,7.7-16.8,9.9c-5.9,2.2-12.2,3.8-18.8,4.5c-9.1,17.9-18,35.5-26.7,52.8c-8.7,17.3-16.5,33.5-23.5,48.6 c-7,15.1-13,28.7-18.1,40.9c-5.1,12.2-8.6,22.1-10.5,29.9c-1,3.9-1.8,7.8-2.5,11.8s-1,7.9-1,11.8c0,6.8,1,12.7,3.1,17.5 s4.7,8.9,8,12.1c3.3,3.2,7.1,5.6,11.5,7.2s8.8,2.3,13.3,2.3c8.2,0,16.5-1.7,25.1-5.1c8.6-3.4,16.3-8.1,23.2-14.2 c6.9-6,12.5-13.2,16.9-21.5s6.6-17.2,6.6-26.7c0-1.2,0-2.3-0.1-3.5s-0.2-2.4-0.4-3.8c0-1.6,0.8-2.6,2.3-3.2c0.8,0,1.4,0.4,1.8,1.3 c0.4,0.9,0.7,1.9,0.9,3.1c0.2,1.2,0.3,2.3,0.3,3.5c0,1.2,0,2.1,0,2.9c0,10.5-2.4,20.2-7.1,29c-4.8,8.8-11,16.5-18.5,23.1 s-16.1,11.6-25.5,15.2s-18.9,5.4-28.5,5.4c-5.6,0-11.1-0.8-16.5-2.5c-5.4-1.7-10.1-4.3-14.2-7.9c-4.1-3.6-7.4-8.2-9.9-13.9 c-2.5-5.7-3.8-12.5-3.8-20.4c0-7.2,1.2-15.5,3.5-24.8c1.9-7.6,5.4-17.3,10.4-29.2s10.9-25.2,17.8-40.1s14.6-30.9,23.1-48 c8.5-17.1,17.3-34.7,26.4-52.8H265c-6.4,0-12.7-0.2-18.8-0.7c-6.1-0.5-12.3-1-18.5-1.6c-6.2-0.6-12.5-1.1-18.8-1.6 c-6.3-0.5-12.8-0.7-19.4-0.7c-6,0-12.1,0.3-18.1,0.9c-0.4,1-0.9,2.3-1.6,3.9c-0.7,1.7-1.7,4.3-3.1,8c-3.1,7-6.9,15.5-11.2,25.4 c-4.4,9.9-9.2,20.3-14.4,31.2c-5.2,10.9-10.9,21.7-16.9,32.4c-6,10.7-12.2,20.3-18.4,28.9c-6.2,8.6-12.5,15.5-18.7,20.9 c-6.2,5.3-12.2,8-17.8,8c-4.1,0-7.6-0.9-10.7-2.8c-3-1.8-5.5-4.4-7.6-7.6s-3.5-6.9-4.5-11.1c-1-4.2-1.5-8.5-1.5-13 c0-7.2,1.4-15.3,4.1-24.4c2.7-9,7.1-18.5,13.1-28.5c7.6-11.9,15.4-22.2,23.5-31.1c8.1-8.8,16.3-16.3,24.8-22.5s17-11,25.5-14.5 s17-6,25.4-7.6l20.4-45c10.5-23.3,21.3-47,32.4-70.9c11.1-23.9,23.2-47.8,36.2-71.5c-7.2,2.5-15.1,4.4-23.6,5.7 c-8.6,1.3-17.3,1.9-26.1,1.9s-17.6-0.5-26.3-1.6C165.7,464.1,157.7,462.5,150.3,460.4z M81.7,795.8c3.7-3.3,7.7-8,12-14.2 c4.3-6.1,8.7-13.1,13.1-21c4.5-7.9,8.9-16.2,13.4-25.1c4.5-8.8,8.8-17.7,13-26.4c4.2-8.8,8.1-17.2,11.7-25.2 c3.6-8.1,6.8-15.2,9.5-21.5l4.4-9.6c-8,1.6-15.9,4-23.8,7.4c-7.9,3.4-15.8,7.9-23.6,13.6c-7.9,5.7-15.6,12.7-23.2,21.2 c-7.6,8.5-14.9,18.5-21.9,30.2c-5.7,9.7-9.8,18.8-12.5,27.2c-2.7,8.4-4.1,16-4.1,22.8c0,9.3,1.8,16.3,5.5,20.9 c3.7,4.6,7.5,6.9,11.4,6.9C71,802.8,76.1,800.4,81.7,795.8z M296,407.5c-3.9,4.9-7.9,10.2-12,16c-4.1,5.8-8.4,12.5-12.8,19.9 c3.9-2.7,7.8-5.8,11.8-9.3c4-3.5,7.6-7.2,10.8-11.2s5.8-8,7.7-12c1.9-4,2.9-7.8,2.9-11.5c0-0.2,0.1-0.3,0.3-0.3 c-1,0.2-2.2,1.1-3.8,2.8C299.4,403.5,297.7,405.4,296,407.5z"/> <path d="M406,665.3l-7.3,14.6c-4.3,8.8-8.7,17.9-13.1,27.3c-4.5,9.4-8.9,19.5-13.1,30.2c-0.2,0.4-0.5,1.1-0.9,2.2 s-0.8,2.1-1.2,3.1c-1.2,2.9-2.6,6.5-4.2,10.7c-1.7,4.2-3.3,8.6-4.8,13.3c-1.6,4.7-2.9,9.3-4.1,13.9c-1.2,4.6-1.8,8.5-1.8,11.8 c0,5.8,2,8.8,6.1,8.8c2.3,0,5-0.9,7.9-2.6s5.7-3.8,8.5-6.1c2.7-2.3,5.2-4.7,7.4-7c2.2-2.3,3.8-4.1,4.8-5.2 c9.3-10.5,19.9-24.5,31.5-42s24.7-37.4,39.1-59.5c1-1,2-1,3.2,0c1.2,1,1.2,2.3,0,4.1c-5.5,8.4-11.1,17.3-17.1,26.7 c-5.9,9.4-12,18.7-18.2,27.9c-6.2,9.2-12.5,17.9-18.8,26.3c-6.3,8.4-12.5,15.7-18.4,22c-5.9,6.3-11.6,11.4-16.9,15.2 c-5.4,3.8-10.3,5.7-14.7,5.7c-4.8,0-8.2-1.5-10.2-4.5c-2-3-3-7.2-3-12.4c0-9.3,2.3-20.5,6.9-33.4c4.6-12.9,10-26.3,16.2-40.1 c-5.6,6.8-11.4,11.9-17.2,15.3c-5.8,3.4-11.5,5.1-16.9,5.1c-5.6,0-10.1-1.9-13.4-5.7s-5-9.4-5-16.8c0-7,1.3-14,3.9-20.9 c2.6-6.9,6.1-13.1,10.6-18.7s9.6-10.1,15.4-13.6s11.9-5.2,18.3-5.2c7.2,0,12.7,1.5,16.5,4.4c3.8,2.9,6.7,7.1,8.6,12.5 c0.8-1.5,1.5-3,2.2-4.2c0.7-1.3,1.4-2.7,2.2-4.2c0.4-1,1.2-1.7,2.3-2c1.2-0.4,2.4-0.5,3.8-0.3c1.4,0.2,2.5,0.6,3.5,1.3 C405.5,663.5,406,664.3,406,665.3z M363.1,715.8c3.9-4.3,8.1-10.1,12.5-17.5c4.5-7.4,8.4-14.5,11.7-21.3 c-1.4-4.5-3.5-8.3-6.4-11.5s-6.9-4.8-12-4.8c-5.8,0-11.3,1.9-16.4,5.7s-9.4,8.5-13.1,14s-6.6,11.4-8.8,17.7s-3.2,11.7-3.2,16.3 c0,4.9,1,8.9,2.9,12c1.9,3.1,4.7,4.7,8.2,4.7c3.3,0,7-1.2,11-3.5C353.5,725.1,358,721.2,363.1,715.8z"/> <path d="M422.9,774.5c-1.9-0.8-2.7-2-2.3-3.5c7-18.3,14.3-35.8,21.9-52.7c7.6-16.8,15.3-33.6,23.1-50.3c0.6-0.6,1.4-0.9,2.3-0.9 h6.1c1,0.4,1.6,0.8,2,1.2c0.4,0.4,0.6,1.3,0.6,2.6c-2.7,5.7-5.5,11.5-8.5,17.5c-2.9,6-5.7,12.2-8.5,18.4c2.7-4.1,5.6-8,8.6-11.8 c3-3.8,6.1-7.2,9.3-10.1s6.6-5.2,10.2-7c3.6-1.8,7.3-2.6,11.2-2.6c4.3,0,7.5,1.5,9.8,4.4c2.2,2.9,3.4,6.6,3.4,11.1 c0,5.2-1.7,11.6-5.1,19.1c-3.4,7.5-7.1,15.3-11,23.5l-2,4.1c-1.6,2.9-3.3,6.5-5.2,10.8c-2,4.3-3.9,8.7-5.8,13.1 c-2,4.5-3.5,8.9-4.8,13.3c-1.3,4.4-1.9,8.1-1.9,11.2c0,4.3,1.8,6.4,5.2,6.4c4.1,0,9.1-2.6,15-7.9c5.9-5.2,12.1-11.8,18.5-19.7 c6.4-7.9,12.8-16.5,19.3-26c6.4-9.4,12.3-18.4,17.5-26.8c5.2-8.5,9.7-15.7,13.3-21.8c3.6-6,5.7-9.7,6.3-11.1c1-1,1.9-1.2,2.9-0.7 c1,0.5,1.5,1.3,1.5,2.5c0,0.2-1.2,2.4-3.7,6.7c-2.4,4.3-5.7,9.8-9.8,16.5c-4.1,6.7-8.8,14.2-14.2,22.5c-5.3,8.3-11,16.5-16.8,24.5 c-5.8,8.1-11.6,15.6-17.4,22.6c-5.7,7-11.1,12.5-16.2,16.6c-5.6,4.7-11.2,7-16.6,7c-5.2,0-9-1.4-11.1-4.2c-2.1-2.8-3.2-6.5-3.2-11 c0-3.5,0.6-7.4,1.8-11.8s2.6-8.7,4.4-13c1.8-4.3,3.6-8.4,5.5-12.4c1.9-4,3.6-7.3,5-10.1l2-3.8h-0.3c0.8-1.5,1.6-3.1,2.3-4.5 s1.6-3,2.3-4.5c2.7-5.6,5.2-11.1,7.6-16.3c2.3-5.2,3.6-10.3,3.8-15.2c0-2.3-0.4-4.5-1.2-6.4c-0.8-1.9-2.2-2.9-4.4-2.9 c-3.7,0-7.5,1.5-11.4,4.4c-3.9,2.9-7.7,6.6-11.5,11.1c-3.8,4.5-7.4,9.5-11,15c-3.5,5.5-6.7,10.8-9.5,15.9 c-2.8,5.1-5.2,9.7-7.3,13.9c-2,4.2-3.5,7.2-4.5,9.2l-0.9,1.8c0.2-0.2,0.2,0,0,0.6c-0.2,0.6-0.5,1.4-0.9,2.3c-0.4,1-0.8,2-1.3,3.1 c-0.5,1.1-0.8,1.9-1,2.5c-1.4,3.3-2.7,6.4-3.9,9.3c-1.3,2.9-2.4,4.4-3.4,4.4L422.9,774.5L422.9,774.5z"/> <path d="M548.2,742.3c4.9-14,10.3-29.1,16.3-45.4c6-16.2,12.5-33,19.3-50.2c6.8-17.2,14.1-34.5,21.8-51.7s15.7-33.8,24.1-49.8 c8.4-16,17.2-30.8,26.4-44.5c9.2-13.7,18.8-25.7,28.6-35.9c9.8-10.2,20-18.2,30.4-24.1s21.1-8.8,32-8.8c5.2,0,10.2,1,14.9,3.1 c4.7,2,8.8,5,12.3,8.9c3.5,3.9,6.2,8.6,8.2,14.2c1.9,5.5,2.9,11.8,2.9,18.8c0,9.3-1.9,18.9-5.7,28.8c-3.8,9.8-8.6,19.4-14.3,28.6 c-5.7,9.2-12,17.9-18.7,25.8c-6.7,8-12.9,14.8-18.5,20.4c-9.2,8-19.2,15.8-30.1,23.5s-22.2,14.7-34,21.2s-23.6,12-35.6,16.6 c-12,4.7-23.6,8.2-34.9,10.5c-2.7,7-5.2,13.2-7.3,18.7c-2.1,5.5-4.1,10.8-6,15.9c-1.8,5.2-3.7,10.3-5.5,15.3s-3.9,10.6-6.3,16.6 c3.7-5.8,7.9-11.9,12.5-18.2s9.3-12.1,13.9-17.2c4.6-5.2,9-9.4,13.3-12.8s8.1-5.1,11.4-5.1s5.5,1.3,6.4,3.8c1,2.5,1.5,5.2,1.5,7.9 c0,4.5-1.1,9-3.2,13.6c-2.1,4.6-4.9,8.8-8.3,12.5c-3.4,3.8-7.2,7-11.4,9.5c-4.2,2.5-8.3,3.9-12.4,4.1c0,1.2-0.2,2.5-0.6,4.1 c-0.8,3.9-1.8,9.7-2.9,17.5c-1.2,7.8-1.8,16.9-1.8,27.4c0,4.7,0.2,9.3,0.7,13.9c0.5,4.6,1.4,8.6,2.8,12.1c1.4,3.5,3.2,6.3,5.5,8.5 c2.3,2.1,5.2,3.2,8.8,3.2c5.6-0.4,11.7-2.9,18.1-7.6c6.4-4.7,13-10.6,19.7-17.7c6.7-7.1,13.4-15.1,20.1-23.9 c6.7-8.8,13.2-17.8,19.4-27c6.2-9.1,12.1-18,17.7-26.6s10.5-16,14.7-22.5c1.6-0.6,2.7-0.4,3.5,0.4s1,1.8,0.6,2.8 c-10.9,16.9-21.5,33.1-31.7,48.5c-10.2,15.4-20.1,29-29.8,40.7c-9.6,11.8-19.1,21.2-28.5,28.2s-18.5,10.5-27.4,10.5 c-5.2,0-9.5-1.4-12.8-4.1c-3.3-2.7-5.9-6.2-7.9-10.4c-2-4.2-3.3-9-4.1-14.3s-1.2-10.7-1.2-15.9c0-6.4,0.4-12.7,1.2-18.8 c0.8-6.1,1.7-11.6,2.6-16.5c1.2-5.6,2.5-11,4.1-16c0-0.8,0.4-1.2,1.2-1.2c5.2-0.2,9.9-2,14-5.5c4.1-3.5,7.5-7.5,10.2-12.1 c2.7-4.6,4.8-9,6.3-13.4s2.2-7.5,2.2-9.5v-0.3c-2.9,1-6.2,3.2-9.8,6.6c-3.6,3.4-7.3,7.4-11.1,12c-3.8,4.6-7.6,9.6-11.4,15 c-3.8,5.5-7.4,10.8-10.8,15.9c-3.4,5.2-6.4,9.8-9,14c-2.6,4.2-4.6,7.4-6,9.8c-0.8,0.4-1.7,0.8-2.8,1.2c-1.1,0.4-2.1,0.6-3.1,0.6 c-3.1,0-4.7-1.2-4.7-3.5L548.2,742.3L548.2,742.3z M725.3,443.7c-8.6,4.7-16.9,11-25.1,18.8c-8.2,7.9-16.2,17.1-23.9,27.6 c-7.8,10.5-15.3,22-22.6,34.4c-7.3,12.5-14.3,25.5-21,39c-6.7,13.5-13.1,27.3-19.3,41.5s-11.9,28.1-17.4,41.9 c11.1-2.5,22.4-6.1,33.9-10.8s22.8-10.1,33.9-16.3c11.1-6.2,21.8-13,32.3-20.4c10.4-7.4,20-15.1,28.8-23.1 c5.8-5.5,12-12.1,18.4-19.8c6.4-7.8,12.4-16.2,17.8-25.1c5.5-9,10-18.1,13.6-27.6c3.6-9.4,5.4-18.5,5.4-27.3 c0-6-0.9-11.5-2.6-16.4c-1.8-4.9-4.1-9-7-12.3s-6.2-5.9-9.9-7.7c-3.7-1.9-7.6-2.8-11.7-2.8c-3.9,0-7.8,0.6-11.8,1.8 C732.9,440.2,729,441.8,725.3,443.7z"/> <path d="M795.7,679.3c1-1.6,1.9-1.8,2.9-0.9c1,1,1.5,2,1.5,3.2c-8,12.7-16,23.6-24.1,32.8c-8.1,9.2-16,16.9-23.6,22.9 c-7.7,6-15,10.5-22,13.3c-7,2.8-13.2,4.2-18.7,4.2c-6.6,0-11.8-1.9-15.6-5.7c-3.8-3.8-5.7-9.4-5.7-16.8c0-5.8,1.8-13.5,5.4-23.1 c3.6-9.5,9.5-19.6,17.7-30.1c5.1-6.2,9.8-11,14.2-14.2s8-4.7,11-4.5c3.3,0,5.8,1,7.4,3.1s2.5,4.7,2.5,8c0,2.7-0.7,5.7-2,8.9 s-3.5,6.2-6.4,9s-6.7,5.2-11.2,7.2c-4.6,2-10.1,3-16.5,3.2c-4.1,6.8-7,12.9-8.9,18.4c-1.8,5.5-2.8,10.1-2.8,14 c0,5.1,1.3,8.9,3.8,11.4c2.5,2.5,6,3.8,10.5,3.8c4.7,0,10.1-1.3,16.2-3.9s12.7-6.7,19.7-12.3c7-5.5,14.3-12.6,22-21.2 C780.5,701.7,788.1,691.4,795.7,679.3z M736.1,669.7c-4.3,2.7-8.2,6.5-11.7,11.2c-3.5,4.8-6.6,9.3-9.3,13.6 c4.5-0.4,8.5-1.4,12-2.9c3.5-1.5,6.4-3.5,8.8-5.7c2.3-2.2,4.1-4.6,5.4-7.2c1.3-2.5,1.9-5,1.9-7.3c0-2.5-0.8-3.8-2.3-3.8 C739.6,667.6,738.1,668.3,736.1,669.7z"/> <path d="M822.8,765.4c-1,0-1.7-0.5-2-1.5c-0.4-1-0.6-1.7-0.6-2c1-2.7,2.1-5.5,3.4-8.5c1.3-2.9,2.6-5.8,3.9-8.8 c3.3-8.2,6.4-16.2,9.3-24.1c2.9-7.9,4.4-15.3,4.4-22.3c0-4.1-0.6-7-1.9-8.8s-3-2.6-5.1-2.6c-5.7,0-11.6,3-17.8,8.9 c-6.2,5.9-12.4,13.1-18.4,21.6c-6,8.5-11.7,17.4-16.9,26.7s-9.6,17.4-13.1,24.2c-0.4,0.4-2.1,0.6-5.2,0.6c-1.6,0-2.9-0.2-4.1-0.7 c-1.2-0.5-1.6-1.6-1.2-3.4c4.5-11.1,9-21.7,13.4-31.7c4.5-10,9-20,13.4-29.9c2.7-5.8,5.5-11.7,8.2-17.5c2.7-5.8,5.3-11.8,7.9-17.8 c1-1,1.8-1.5,2.3-1.5h6.4c2.1,0,2.9,1.4,2.3,4.1l-8.8,18.4c-2.5,5.5-4.5,9.6-5.8,12.5s-2.6,5.5-3.7,7.6s-2.1,4.4-3.2,6.7 s-2.5,5.7-4.2,9.9c3.5-5.6,7.3-11.2,11.5-16.6c4.2-5.5,8.5-10.3,12.8-14.6c4.4-4.3,8.8-7.7,13.3-10.4c4.5-2.6,8.8-3.9,12.8-3.9 c5.8,0,10,2.1,12.5,6.3c2.5,4.2,3.8,9.1,3.8,14.7c0,2.9-0.3,5.9-1,9c-0.7,3.1-1.6,6.3-2.8,9.6c2.9-5.1,6.2-10.3,9.9-15.6 c3.7-5.3,7.6-10.2,11.8-14.6c4.2-4.4,8.6-7.9,13.1-10.7c4.6-2.7,9.2-4.1,13.9-4.1c4.9,0,8.9,1.4,12.1,4.2 c3.2,2.8,4.8,6.8,4.8,11.8c-0.4,6.2-2.6,14-6.6,23.2s-8.6,19-13.9,29.3c-2,3.7-4.2,8-6.7,12.8c-2.5,4.9-4.9,9.9-7.2,15 c-2.2,5.2-4.1,10.2-5.7,15.2c-1.6,5-2.3,9.4-2.3,13.3c0,2.7,0.6,5.2,1.9,7.6c1.3,2.3,3.5,3.5,6.6,3.5c2.1,0,4.6-0.7,7.4-2 s5.2-2.8,7.2-4.4c10.3-8.6,19.5-18,27.4-28.3c8-10.3,15.4-21,22.3-32c6.9-11,13.6-22.1,20-33.3c6.4-11.2,13.2-22,20.4-32.5 c0.8-1.2,1.8-1.3,2.9-0.4s1.5,2.1,0.9,3.7c-7.4,11.5-14.4,23-21,34.6c-6.6,11.6-13.4,22.8-20.4,33.7c-7,10.9-14.5,21.4-22.5,31.4 s-16.9,19.1-26.8,27.3c-6.4,5.5-12.9,8.2-19.6,8.2c-4.5,0-8.3-1.5-11.5-4.5c-3.2-3-4.8-7.6-4.8-13.9c0-4.1,0.6-8.5,1.9-13.1 c1.3-4.7,2.9-9.5,5-14.5c2-5,4.2-9.8,6.6-14.6c2.3-4.8,4.6-9.3,6.7-13.6c2.3-4.9,4.7-9.8,7.2-14.9c2.4-5.1,4.6-9.9,6.6-14.5 c1.9-4.6,3.5-8.9,4.7-13c1.2-4.1,1.8-7.8,1.8-11.1c0-5.8-2.4-8.8-7.3-8.8c-3.7,0-7.5,1.3-11.4,3.9c-3.9,2.6-7.8,6.1-11.7,10.5 c-3.9,4.4-7.6,9.2-11.2,14.6c-3.6,5.3-7,10.8-10.2,16.3c-3.2,5.5-6.1,10.9-8.8,16c-2.6,5.2-4.8,9.6-6.6,13.3 c-1.6,3.1-2.9,5.6-3.9,7.4c-1.1,1.8-1.9,2.8-2.5,2.8L822.8,765.4L822.8,765.4z"/> <path d="M1062.8,665.3l-7.3,14.6c-4.3,8.8-8.7,17.9-13.1,27.3c-4.5,9.4-8.9,19.5-13.1,30.2c-0.2,0.4-0.5,1.1-0.9,2.2 s-0.8,2.1-1.2,3.1c-1.2,2.9-2.6,6.5-4.2,10.7c-1.7,4.2-3.3,8.6-4.8,13.3c-1.6,4.7-2.9,9.3-4.1,13.9c-1.2,4.6-1.8,8.5-1.8,11.8 c0,5.8,2,8.8,6.1,8.8c2.3,0,5-0.9,7.9-2.6c2.9-1.8,5.7-3.8,8.5-6.1c2.7-2.3,5.2-4.7,7.4-7c2.2-2.3,3.8-4.1,4.8-5.2 c9.3-10.5,19.8-24.5,31.5-42c11.7-17.5,24.7-37.4,39.1-59.5c1-1,2-1,3.2,0c1.2,1,1.2,2.3,0,4.1c-5.4,8.4-11.1,17.3-17.1,26.7 s-12,18.7-18.2,27.9c-6.2,9.2-12.5,17.9-18.8,26.3c-6.3,8.4-12.5,15.7-18.4,22c-5.9,6.3-11.6,11.4-16.9,15.2 c-5.3,3.8-10.3,5.7-14.7,5.7c-4.8,0-8.2-1.5-10.2-4.5c-2-3-3-7.2-3-12.4c0-9.3,2.3-20.5,6.9-33.4s10-26.3,16.2-40.1 c-5.7,6.8-11.4,11.9-17.2,15.3c-5.8,3.4-11.5,5.1-16.9,5.1c-5.7,0-10.1-1.9-13.4-5.7s-5-9.4-5-16.8c0-7,1.3-14,3.9-20.9 s6.1-13.1,10.6-18.7s9.6-10.1,15.3-13.6s11.9-5.2,18.3-5.2c7.2,0,12.7,1.5,16.5,4.4s6.7,7.1,8.6,12.5c0.8-1.5,1.5-3,2.2-4.2 c0.7-1.3,1.4-2.7,2.2-4.2c0.4-1,1.2-1.7,2.3-2c1.2-0.4,2.4-0.5,3.8-0.3c1.4,0.2,2.5,0.6,3.5,1.3 C1062.3,663.5,1062.8,664.3,1062.8,665.3z M1019.9,715.8c3.9-4.3,8.1-10.1,12.6-17.5c4.5-7.4,8.4-14.5,11.7-21.3 c-1.4-4.5-3.5-8.3-6.4-11.5s-6.9-4.8-12-4.8c-5.8,0-11.3,1.9-16.3,5.7s-9.4,8.5-13.1,14s-6.6,11.4-8.8,17.7s-3.2,11.7-3.2,16.3 c0,4.9,1,8.9,2.9,12c1.9,3.1,4.7,4.7,8.2,4.7c3.3,0,7-1.2,11-3.5C1010.3,725.1,1014.8,721.2,1019.9,715.8z"/> <path d="M1198.8,679.6c0.4-1,1.1-1.5,2-1.5c0.6,0,1.2,0.3,1.8,0.9s0.9,1.5,0.9,2.6c-8,12.7-16,23.6-24.1,32.8 c-8.1,9.2-16,16.9-23.8,22.9c-7.8,6-15.2,10.5-22.2,13.3c-7,2.8-13.2,4.2-18.7,4.2c-6.8,0-12.1-2-15.9-6.1 c-3.8-4.1-5.7-9.2-5.7-15.2c0-4.7,0.9-9.6,2.8-14.9c1.8-5.2,4-10.4,6.6-15.5c2.5-5.1,5.2-9.7,7.9-14c2.7-4.3,5-7.6,6.7-9.9 c3.7-4.5,7.9-8.5,12.6-12c4.7-3.5,9.2-5.2,13.7-5.2c3.9,0,6.9,1.5,8.9,4.4s3.1,6.5,3.1,10.8c0,3.9-0.8,8.2-2.3,12.8 c-1.6,4.7-4.2,9.5-7.9,14.6c-0.2,0.2-0.8,0.3-1.8,0.3c-1.8,0-2.6-1-2.6-2.9c0-0.8,0.2-1.4,0.6-1.8v0.3c5.8-8.2,8.8-15.9,8.8-23.1 c0-2.7-0.4-4.9-1.3-6.6c-0.9-1.7-2.1-2.5-3.7-2.5c-3.1,0-6.3,1.3-9.6,3.9c-3.3,2.6-6.6,6-9.8,10.1s-6.2,8.7-9.1,13.7 c-2.8,5.1-5.3,10.1-7.6,15c-2.2,5-4,9.6-5.2,14s-1.9,7.8-1.9,10.4c0,4.5,1.2,7.8,3.7,10.1c2.4,2.2,5.8,3.4,10.1,3.4 c4.7,0,10.1-1.3,16.3-3.9s13-6.7,20.3-12.3s14.9-12.7,22.8-21.6c7.9-8.8,15.8-19.5,23.8-32L1198.8,679.6L1198.8,679.6z"/> <path d="M1338.9,679.3c0.2-0.2,0.5-0.4,0.9-0.7c0.4-0.3,0.8-0.4,1.2-0.4c0.6,0,1.2,0.3,1.9,1c0.7,0.7,0.9,1.5,0.7,2.5 c-10.5,15.8-20.7,31.1-30.7,46.1c-9.9,15-19.4,28.3-28.5,40c-9.1,11.7-17.5,21-25.2,28c-7.8,7-14.8,10.5-21,10.5 c-4.3,0-7.2-1.3-8.9-3.8c-1.7-2.5-2.5-6.2-2.5-11.1c0-5.7,1-12.4,2.9-20.3c1.9-7.9,4.1-15.9,6.4-24.1c2.3-7.8,4.4-15.2,6.1-22.2 c1.8-7,2.6-12.7,2.6-17.2c0-5.6-1.8-8.5-5.6-8.5c-3.1,0-7.1,1.6-12,4.8c-4.9,3.2-9.8,7.2-14.9,12.1c-5.1,4.9-9.8,10-14.3,15.5 c-4.5,5.5-8,10.3-10.5,14.6c-0.6,0.6-1.9,0.9-4.1,0.9c-1.6,0-2.9-0.4-3.9-1.2c-1.1-0.8-1.6-1.9-1.6-3.5 c4.5-12.5,9.2-25.6,14.3-39.5c5.1-13.9,10.5-28.3,16.2-43.1c5.7-14.8,11.9-29.8,18.4-45s13.5-30.3,20.9-45.2 c4.9-10.1,10.3-20.5,16.2-31.2c5.9-10.7,12.2-21.2,18.8-31.5c6.6-10.3,13.6-20,21-29.2c7.4-9.1,15-17.2,22.9-24.1 c7.9-6.9,15.9-12.4,24.1-16.5c8.2-4.1,16.5-6.1,25.1-6.1c11.9,0,21.2,4.1,28,12.4s10.2,19.1,10.2,32.5c0,7-1.2,14.7-3.5,23.1 c-2.3,8.4-5.8,17.1-10.5,26.3c-4.7,9.2-10.6,18.4-17.7,27.9c-7.1,9.4-15.3,18.6-24.7,27.6c-9.2,8.2-19.2,16-30.1,23.6 c-10.9,7.6-22.2,14.6-33.9,21c-11.7,6.4-23.6,12-35.6,16.6c-12.1,4.7-23.8,8.2-35,10.5c-2.9,7.4-5.6,14.3-8,20.6 c-2.4,6.3-4.8,12.5-7,18.4c-2.2,5.9-4.4,11.9-6.6,17.8c-2.1,5.9-4.4,12.1-6.7,18.5c4.1-4.7,8.2-9.1,12.4-13.3 c4.2-4.2,8.3-7.8,12.4-11c4.1-3.1,8-5.6,11.8-7.4c3.8-1.8,7.3-2.8,10.7-2.8c4.1,0,7.3,1.4,9.6,4.2c2.3,2.8,3.5,7.3,3.5,13.6 c0,3.7-0.5,8.1-1.5,13.3c-1,5.2-2.5,11-4.7,17.7v-0.3l-2,6.4c-1,2.9-2.1,6.4-3.4,10.4c-1.3,4-2.5,8-3.7,12.1s-2.1,8-2.9,11.8 s-1.2,7-1.2,9.8c0,5.2,1.4,7.9,4.1,7.9c3.7,0,8.1-2.1,13.3-6.3c5.2-4.2,10.7-9.7,16.6-16.6c5.9-6.9,12.1-14.7,18.4-23.3 c6.3-8.7,12.6-17.5,18.7-26.4c6.1-9,11.9-17.7,17.4-26.1C1330.1,692.9,1334.8,685.5,1338.9,679.3z M1371.3,437.9 c-10.3,2.5-20.5,7.9-30.5,16.2c-10,8.3-19.7,18.3-28.9,30.2c-9.2,11.9-18.2,25-26.7,39.4c-8.6,14.4-16.5,28.9-23.8,43.5 c-7.3,14.6-14,28.8-20,42.6s-11.2,26.2-15.5,37.1c12.8-2.7,26.3-7.1,40.4-13.1c14.1-6,27.9-13.3,41.4-21.8 c13.5-8.5,26.4-18,38.5-28.5s22.9-21.7,32.1-33.4c9.2-11.8,16.6-24,22-36.8c5.4-12.7,8.2-25.5,8.2-38.4c0-4.9-0.7-9.6-2-14.2 c-1.4-4.6-3.3-8.6-5.8-12.1c-2.5-3.5-5.7-6.3-9.3-8.5c-3.7-2.1-8-3.2-12.8-3.2C1375.7,437,1373.3,437.3,1371.3,437.9z"/> <path d="M1494.2,525.2c-2.9,6.6-7.4,14-13.4,22c-6,8.1-13.8,16.5-23.2,25.4c-9.4,8.9-20.7,17.9-33.7,27.2c-13,9.2-28,18.2-44.9,27 c-0.2,0.4-0.4,0.8-0.7,1.2c-0.3,0.4-0.4,0.7-0.4,0.9h43.5c1.4,0,2,0.7,2,2c0,1.8-0.7,2.6-2,2.6h-46.7 c-12.8,22.4-23.9,44.2-33.1,65.4s-16.2,40.1-20.9,56.6c-0.4,1.2-0.9,3-1.5,5.4c-0.6,2.4-1.2,5.1-1.8,8c-0.6,2.9-1.1,6-1.5,9.3 s-0.6,6.4-0.6,9.3c0,3.7,0.5,6.8,1.5,9.3c1,2.5,2.5,3.8,4.7,3.8c4.9,0,10.7-3.3,17.5-9.8c6.8-6.5,14-14.8,21.6-25 s15.4-21.2,23.3-33.1c8-12,15.5-23.4,22.5-34.3l12.3-19.3c1.4-1,2.5-1.2,3.5-0.6c1,0.6,1.3,1.7,0.9,3.2c-2.7,4.1-5.6,8.5-8.6,13.1 c-3,4.7-6,9.2-8.9,13.7c-7.6,11.5-15.3,23.1-23.1,34.7c-7.8,11.7-15.5,22.2-23.1,31.7c-7.6,9.4-14.9,17.1-21.9,23.1 c-7,5.9-13.5,8.9-19.6,8.9c-3.3,0-5.9-0.8-7.7-2.3c-1.8-1.6-3.3-3.4-4.2-5.5s-1.6-4.5-1.8-7c-0.2-2.5-0.3-4.9-0.3-7 c0-7.2,1.5-16.4,4.4-27.6c2.9-11.2,7-23.5,12.1-36.9c5.2-13.4,11.3-27.6,18.5-42.6c7.2-15,15.1-29.9,23.6-44.7h-42.6 c-1.6,0-2.3-0.9-2.3-2.6c0-1.4,0.8-2,2.3-2h45.8c7.4-13.2,15.1-25.9,23.1-38.1c8-12.2,16.1-23.8,24.2-34.9 c8.6-11.5,16.6-21.2,24.1-29s14.3-14.3,20.6-19.3c6.2-5,11.8-8.6,16.6-10.8c4.9-2.2,9.1-3.4,12.6-3.4c8,0,12,4.5,12,13.4 C1498.9,511.6,1497.3,517.8,1494.2,525.2z M1460.6,517c-5.2,4.9-11.1,11-17.7,18.5s-13.2,15.8-20,24.8s-13.6,18.6-20.4,28.6 c-6.8,10-13.2,20-19.3,29.9c19.7-10.7,36.5-21.6,50.5-32.7s25.4-21.7,34.3-31.8c8.8-10.1,15.4-19.3,19.6-27.6 c4.2-8.3,6.3-14.9,6.3-20c0-5.2-1.7-7.9-5-7.9c-2.3,0-4.9,0.8-7.7,2.3c-2.8,1.6-5.6,3.4-8.3,5.4c-2.7,2-5.2,4.1-7.4,6.1 C1463.2,514.8,1461.6,516.2,1460.6,517z"/> </g> <g> <g> <path class="st1" d="M991.7,272.3c34.5-54.3,40.5-122.9,12.8-181.1C980.3,40.6,941.9,7.8,898.6,7.8C839.8,7.8,790,68,772.9,151.3 C755.8,68,706,7.8,647.3,7.8c-58.5,0-95.6,64.1-102.6,76.8c-47.1,85.9,4.9,179.8,9.5,187.6"/> <line class="st2" x1="555.6" y1="273.4" x2="991.7" y2="272.2"/> </g> <g> <line class="st3" x1="555.6" y1="273.4" x2="991.7" y2="272.2"/> </g> <g> <g> <path d="M878.7,422l27.7-37.9l27.8-37.8l55.7-75.5l-0.1,0.1c11.7-18.8,20.2-39.5,24.8-61.1c4.7-21.6,5.5-43.9,2.3-65.7 c-0.8-5.4-1.8-10.8-3.1-16.2c-0.6-2.7-1.4-5.3-2.1-8c-0.8-2.6-1.6-5.3-2.5-7.8c-3.5-10.4-8.1-20.4-13.4-30 c-5.3-9.6-11.4-18.8-18.3-27.3c-6.9-8.5-14.6-16.3-23.2-22.8c-8.6-6.6-18.1-11.9-28.2-15.4c-10.1-3.5-20.8-5.1-31.5-4.5 c-10.6,0.5-21.1,3.2-30.8,7.7c-9.8,4.4-18.8,10.5-26.9,17.7c-8.1,7.2-15.3,15.4-21.8,24.2s-12,18.3-16.8,28.1 c-9.7,19.7-16.5,40.8-21,62.4l-4.4,21.4l-4.4-21.4c-2.9-14.2-6.9-28.2-12-41.7c-5.1-13.5-11.4-26.6-19.1-38.8 c-7.7-12.2-16.7-23.5-27.3-33.1c-10.5-9.6-22.7-17.4-36-22c-13.3-4.6-27.7-5.9-41.4-3.3c-13.8,2.6-26.7,9.1-38.2,17.6 c-11.5,8.5-21.5,19.1-30.3,30.5c-8.8,11.5-16.6,23.8-22.5,36.9c-5.8,13.2-9.9,27.2-11.9,41.5c-2,14.3-2.2,28.9-0.8,43.4 c1.4,14.5,4.3,28.8,8.5,42.8c4.2,14,9.5,27.6,16.1,40.6l42.2,77.6l21,38.9l21,38.9l-22.1-38.3l-22-38.3l-22-38.4l-11-19.2 l-5.5-9.6l-2.7-4.8c-0.9-1.6-1.9-3.2-2.7-4.9c-7-13.2-12.6-27-17.1-41.2c-4.5-14.2-7.7-28.8-9.4-43.7 c-1.7-14.9-1.7-29.9,0.3-44.8c1.9-14.9,5.9-29.6,11.9-43.4c6-13.8,13.9-26.7,22.9-38.7c9-12,19.5-23,31.6-32.2 c6-4.6,12.5-8.7,19.5-12c6.9-3.3,14.2-5.9,21.8-7.4c15.2-3,31.2-1.7,45.7,3.3c7.3,2.5,14.3,5.8,20.8,9.8 c6.5,4,12.6,8.7,18.3,13.8c11.3,10.2,20.8,22.1,28.9,34.9c8,12.8,14.6,26.3,20,40.3c5.3,14,9.5,28.4,12.5,43.1h-8.8 c4.6-22.2,11.7-44.1,21.8-64.5c5.1-10.2,10.9-20.1,17.7-29.4c6.8-9.3,14.4-18,23.1-25.6c8.7-7.6,18.4-14.2,29.1-19 c10.7-4.8,22.2-7.7,34-8.2c11.7-0.6,23.5,1.3,34.6,5.2c11,3.9,21.2,9.8,30.3,16.9c9.1,7.1,17.2,15.4,24.4,24.3 s13.4,18.6,18.7,28.6c5.4,10,10,20.5,13.6,31.3c0.9,2.7,1.7,5.4,2.5,8.2c0.7,2.8,1.5,5.5,2.1,8.3c1.3,5.5,2.3,11.2,3,16.8 c0.8,5.6,1.2,11.3,1.5,17c0.2,5.7,0.2,11.4-0.1,17.1c-0.3,5.7-0.8,11.4-1.6,17c-0.8,5.6-1.8,11.2-3.1,16.8 c-5.1,22.1-14.2,43.3-26.5,62.3l-0.1,0.1l0,0.1l-57.2,74.3L907.5,385L878.7,422z"/> </g> </g> </g> </g> </svg>`;
 
 const QUOTES = [
   {text:"Wege entstehen dadurch, dass man sie geht.",author:"Franz Kafka"},
@@ -964,6 +992,7 @@ function openInvoiceModal(invoiceId=null){
       introText:'',
       footerNote:state.settings.invoiceFooterText||'',
       paymentTerms:`Bitte überweisen Sie den Rechnungsbetrag innerhalb von ${state.settings.paymentTermsDays} Tagen ohne Abzug.`,
+      rightsTransfer:state.settings.rightsTransferText||'',
       includeKleinunternehmerNotice:state.settings.kleinunternehmer,
     };
   } else {
@@ -1000,6 +1029,10 @@ function renderInvoiceModal(){
           <div class="field-row-3">
             <div class="field"><label>Rechnungsdatum</label><input type="date" id="inv-date" value="${inv.invoiceDate}"></div>
             <div class="field"><label>Leistungsdatum</label><input type="date" id="inv-service" value="${inv.serviceDate}"></div>
+            <div class="field"><label>Leistungszeitraum (optional)</label>
+              <input type="text" id="inv-period" value="${escapeAttr(inv.servicePeriod||'')}" placeholder="z.B. 16.–17.07.2025 oder Juli 2025">
+              <div class="hint">Wenn ausgefüllt, wird dies statt des Einzeldatums gedruckt (nur bei Hankemacht-Theme).</div>
+            </div>
             <div class="field"><label>Fällig am</label><input type="date" id="inv-due" value="${inv.dueDate}"></div>
           </div>
           <div class="divider">Kunde</div>
@@ -1029,6 +1062,10 @@ function renderInvoiceModal(){
           </div>
           <div class="field"><label>Fußnote</label>
             <textarea id="inv-footer">${escapeHtml(inv.footerNote||'')}</textarea>
+          </div>
+          <div class="field"><label>Rechteübertragung (optional)</label>
+            <textarea id="inv-rights" placeholder="Leer lassen, wenn nicht benötigt">${escapeHtml(inv.rightsTransfer||'')}</textarea>
+            <div class="hint">Standardtext in den Einstellungen unter "Rechnungen" hinterlegbar.</div>
           </div>
           ${state.settings.kleinunternehmer?`<label class="toggle">
             <input type="checkbox" id="inv-klein" ${inv.includeKleinunternehmerNotice?'checked':''}>
@@ -1086,6 +1123,7 @@ function collectInvoiceDraft(){
   inv.status=document.getElementById('inv-status').value;
   inv.invoiceDate=document.getElementById('inv-date').value;
   inv.serviceDate=document.getElementById('inv-service').value;
+  const periodEl=document.getElementById('inv-period'); if(periodEl) inv.servicePeriod=periodEl.value.trim();
   inv.dueDate=document.getElementById('inv-due').value;
   inv.customer={
     name:document.getElementById('cust-name').value.trim(),
@@ -1098,6 +1136,7 @@ function collectInvoiceDraft(){
   inv.introText=document.getElementById('inv-intro').value;
   inv.paymentTerms=document.getElementById('inv-terms').value;
   inv.footerNote=document.getElementById('inv-footer').value;
+  const rightsEl=document.getElementById('inv-rights'); if(rightsEl) inv.rightsTransfer=rightsEl.value;
   const k=document.getElementById('inv-klein');
   if(k)inv.includeKleinunternehmerNotice=k.checked;
   inv.items=Array.from(document.querySelectorAll('.inv-item')).map(row=>({
@@ -1181,6 +1220,10 @@ async function deleteInvoice(){
 
 function renderInvoicePdfHTML(inv){
   const s=state.settings;
+  // Spezielles Layout für Hankemacht-Theme
+  if((s.invoiceTheme||'classic')==='hankemacht'){
+    return renderInvoicePdfHankemacht(inv);
+  }
   const totals=computeInvoiceTotals(inv);
   const klein=s.kleinunternehmer&&inv.includeKleinunternehmerNotice;
   const accent=s.invoiceAccent||'#2F5344';
@@ -1253,6 +1296,106 @@ function renderInvoicePdfHTML(inv){
     </div>`;
 }
 
+function renderInvoicePdfHankemacht(inv){
+  const s=state.settings;
+  const totals=computeInvoiceTotals(inv);
+  const klein=s.kleinunternehmer&&inv.includeKleinunternehmerNotice;
+  // Zahlungsart heuristisch ableiten
+  const zahlungsart=(inv.paymentTerms||'').toLowerCase().includes('überweis')||(inv.paymentTerms||'').toLowerCase().includes('überweis')
+    ?'Rechnung':'Rechnung';
+  // Leistungszeitraum: aus inv.servicePeriod (optional) oder Einzeldatum
+  const leistung=inv.servicePeriod?inv.servicePeriod:fmtDate(inv.serviceDate);
+
+  return `
+    <div class="pdf-preview theme-hankemacht">
+      <div class="hm-footer-info">
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">Bankverbindung</div>
+          ${s.bankName?`<div>Kontoinhaber: ${escapeHtml(s.ownerName||'')}</div>`:''}
+          ${s.iban?`<div>IBAN: ${escapeHtml(s.iban)}</div>`:''}
+          ${s.bic?`<div>BIC: ${escapeHtml(s.bic)}</div>`:''}
+        </div>
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">Kontaktiere uns</div>
+          ${s.email?`<div>Email: ${escapeHtml(s.email)}</div>`:''}
+          ${s.phone?`<div>Telefon: ${escapeHtml(s.phone)}</div>`:''}
+        </div>
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">${escapeHtml(s.website||s.businessName||'Hankemacht.com')}</div>
+          ${s.street?`<div>${escapeHtml(s.street)}</div>`:''}
+          ${(s.zip||s.city)?`<div>${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>`:''}
+        </div>
+      </div>
+
+      <div class="hm-logo">${HANKEMACHT_LOGO_SVG}</div>
+
+      <div class="hm-header-info">
+        <div>
+          <div style="font-weight:600">${escapeHtml(s.businessName||'Hankemacht.com')}</div>
+          <div>${escapeHtml(s.ownerName||'')}</div>
+          <div>${escapeHtml(s.street||'')}</div>
+          <div>${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>
+        </div>
+        <div style="text-align:right">
+          ${s.email?`<div>Email: ${escapeHtml(s.email)}</div>`:''}
+          ${s.taxNumber?`<div>Steuer-Nummer: ${escapeHtml(s.taxNumber)}</div>`:''}
+          ${s.vatId?`<div>USt-IdNr.: ${escapeHtml(s.vatId)}</div>`:''}
+        </div>
+      </div>
+
+      <div class="hm-sender-bar">${escapeHtml(s.businessName||'Hankemacht.com')} &ndash; ${escapeHtml(s.street||'')} &ndash; ${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>
+
+      <div class="hm-recipient">
+        <div style="font-weight:600">${escapeHtml(inv.customer.name||'')}</div>
+        <div>${escapeHtml(inv.customer.street||'')}</div>
+        <div>${escapeHtml(inv.customer.zip||'')} ${escapeHtml(inv.customer.city||'')}</div>
+        ${inv.customer.country&&inv.customer.country!=='Deutschland'?`<div>${escapeHtml(inv.customer.country)}</div>`:''}
+      </div>
+
+      <h1 class="hm-h1">RECHNUNG</h1>
+
+      <div class="hm-meta">
+        <div><strong>Rechnungsnummer:</strong> ${escapeHtml(inv.number)}</div>
+        <div style="text-align:right"><strong>Datum:</strong> ${fmtDate(inv.invoiceDate)}</div>
+      </div>
+      <div class="hm-meta">
+        <div><strong>Leistungszeitraum:</strong> ${escapeHtml(leistung)}</div>
+        <div style="text-align:right"><strong>Zahlungsart:</strong> ${escapeHtml(zahlungsart)}</div>
+      </div>
+
+      ${inv.introText?`<p class="hm-intro">${escapeHtml(inv.introText).replace(/\n/g,'<br>')}</p>`:''}
+
+      <table class="hm-items">
+        <thead><tr>
+          <th>Bezeichnung</th>
+          <th class="r" style="width:12%">Anzahl</th>
+          <th class="r" style="width:16%">Preis</th>
+          <th class="r" style="width:18%">Gesamt</th>
+        </tr></thead>
+        <tbody>
+        ${totals.lines.map(l=>`<tr>
+          <td>${escapeHtml(l.description)}</td>
+          <td class="r">${(l.qty||0).toString().replace('.',',')}</td>
+          <td class="r">${fmtEUR(l.unitPrice)}</td>
+          <td class="r">${fmtEUR(l.lineNet)}</td>
+        </tr>`).join('')}
+        <tr class="hm-subtotal"><td colspan="3" class="r"><strong>Zwischensumme</strong></td><td class="r"><strong>${fmtEUR(totals.totalNet)}</strong></td></tr>
+        <tr class="hm-grand"><td colspan="3" class="r"><strong>Gesamt</strong></td><td class="r"><strong>${fmtEUR(totals.totalGross)}</strong></td></tr>
+        ${!klein?`
+          <tr><td colspan="3" class="r">Netto</td><td class="r">${fmtEUR(totals.totalNet)}</td></tr>
+          ${totals.vatBreakdown.map(v=>`<tr><td colspan="3" class="r">Zzgl. MwSt. ${v.rate} %</td><td class="r">${fmtEUR(v.vat)}</td></tr>`).join('')}
+        `:`<tr><td colspan="4" style="padding-top:10px;font-size:9pt;font-style:italic">Gemäß §19 UStG wird keine Umsatzsteuer berechnet.</td></tr>`}
+        </tbody>
+      </table>
+
+      ${inv.rightsTransfer?`<div class="hm-rights"><strong>Rechteübertragung</strong><br>${escapeHtml(inv.rightsTransfer).replace(/\n/g,'<br>')}</div>`:''}
+
+      ${inv.paymentTerms?`<p class="hm-terms">${escapeHtml(inv.paymentTerms).replace(/\n/g,'<br>')}${inv.dueDate?`<br><strong>Zahlbar bis ${fmtDate(inv.dueDate)}</strong>`:''}</p>`:''}
+
+      ${inv.footerNote?`<p class="hm-footer-note">${escapeHtml(inv.footerNote)}</p>`:''}
+    </div>`;
+}
+
 function previewInvoice(){
   collectInvoiceDraft();
   const inv=state.invoiceDraft;
@@ -1297,6 +1440,29 @@ function printInvoice(inv){
       .theme-elegant{font-family:Georgia,'Times New Roman',serif}
       .theme-elegant h1{font-family:Georgia,serif;font-style:italic;font-weight:400}
       .theme-elegant table.items th{font-style:italic;text-transform:none;letter-spacing:0;font-size:10pt}
+      .theme-hankemacht{font-family:Helvetica,Arial,sans-serif;padding:30px 40px 70px;position:relative;color:#000;min-height:1050px}
+      .theme-hankemacht .hm-footer-info{position:absolute;bottom:20px;left:40px;right:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444}
+      .theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
+      .theme-hankemacht .hm-foot-col div{line-height:1.4}
+      .theme-hankemacht .hm-logo{display:flex;justify-content:center;margin:20px 0 10px}
+      .theme-hankemacht .hm-logo svg{width:240px;height:auto}
+      .theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-top:10px;margin-bottom:18px}
+      .theme-hankemacht .hm-header-info div{line-height:1.4}
+      .theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
+      .theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
+      .theme-hankemacht .hm-h1{font-size:16pt;font-weight:700;letter-spacing:2px;margin:24px 0 14px;text-transform:uppercase;color:#000}
+      .theme-hankemacht .hm-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10pt;margin-bottom:4px}
+      .theme-hankemacht .hm-intro{margin:14px 0;font-size:10pt;line-height:1.5}
+      .theme-hankemacht table.hm-items{width:100%;border-collapse:collapse;margin-top:22px;font-size:10pt}
+      .theme-hankemacht table.hm-items th{text-align:left;padding:8px 6px;border-bottom:1px solid #000;font-weight:700;font-size:10pt}
+      .theme-hankemacht table.hm-items th.r{text-align:right}
+      .theme-hankemacht table.hm-items td{padding:6px;font-variant-numeric:tabular-nums}
+      .theme-hankemacht table.hm-items td.r{text-align:right}
+      .theme-hankemacht table.hm-items tr.hm-subtotal td{border-top:1px solid #000;padding-top:8px}
+      .theme-hankemacht table.hm-items tr.hm-grand td{font-size:11pt;padding-bottom:8px}
+      .theme-hankemacht .hm-rights{margin-top:28px;font-size:9pt;line-height:1.5;color:#333}
+      .theme-hankemacht .hm-terms{margin-top:18px;font-size:10pt;line-height:1.5}
+      .theme-hankemacht .hm-footer-note{margin-top:14px;font-size:9pt;font-style:italic;color:#555}
       @media print{body{margin:0}@page{margin:0;size:A4}}
     </style></head><body>${html}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},250);};</scr`+`ipt></body></html>`);
   win.document.close();
@@ -1419,12 +1585,17 @@ function renderTabInvoice(){
     <div class="field"><label>Standard-Fußnote</label>
       <textarea id="s-footer">${escapeHtml(s.invoiceFooterText||'')}</textarea>
     </div>
+    <div class="field"><label>Standard-Rechteübertragungstext (optional)</label>
+      <textarea id="s-rights" placeholder="Bleibt leer, wenn du keine Rechteübertragungsklausel brauchst" style="min-height:80px">${escapeHtml(s.rightsTransferText||'')}</textarea>
+      <div class="hint">Wird unter den Summen gedruckt, wenn in der Rechnung aktiviert. Nützlich für Illustrator:innen, Fotograf:innen, Texter:innen etc.</div>
+    </div>
     <div class="divider">Design</div>
     <div class="field"><label>Stil</label>
       <select id="s-theme">
         <option value="classic" ${s.invoiceTheme==='classic'?'selected':''}>Klassisch (sachlich)</option>
         <option value="modern" ${s.invoiceTheme==='modern'?'selected':''}>Modern (luftig, dünne Linien)</option>
         <option value="elegant" ${s.invoiceTheme==='elegant'?'selected':''}>Elegant (Serifenschrift)</option>
+        <option value="hankemacht" ${s.invoiceTheme==='hankemacht'?'selected':''}>Hankemacht (mit Logo)</option>
       </select>
     </div>
     <div class="field"><label>Akzentfarbe</label>
@@ -2149,6 +2320,7 @@ async function saveSettingsFromModal(){
     state.settings.invoiceFooterText=get('s-footer').value;
     state.settings.invoiceTheme=get('s-theme').value;
     state.settings.invoiceAccent=get('s-accent').value;
+    if(get('s-rights')) state.settings.rightsTransferText=get('s-rights').value;
   } else if(tab==='sync'){
     if(get('s-dbxauto')) state.settings.dbxAutoSync=get('s-dbxauto').checked;
     if(get('s-dbxkey')) state.settings.dbxAppKey=get('s-dbxkey').value.trim();
