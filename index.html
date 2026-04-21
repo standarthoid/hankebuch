@@ -320,14 +320,11 @@
   .pdf-preview.theme-elegant h1{font-family:Georgia,serif;font-style:italic;font-weight:400}
   .pdf-preview.theme-elegant table.items th{font-style:italic;text-transform:none;letter-spacing:0;font-size:10pt}
 
-  /* Hankemacht-Theme: minimalistisch, mit Logo oben zentriert */
-  .pdf-preview.theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px 70px;position:relative;color:#000}
-  .pdf-preview.theme-hankemacht .hm-footer-info{position:absolute;bottom:20px;left:40px;right:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444}
-  .pdf-preview.theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
-  .pdf-preview.theme-hankemacht .hm-foot-col div{line-height:1.4}
-  .pdf-preview.theme-hankemacht .hm-logo{display:flex;justify-content:flex-start;margin:20px 0 10px;width:100%}
-  .pdf-preview.theme-hankemacht .hm-logo svg{width:240px;height:auto;max-width:100%;display:block}
-  .pdf-preview.theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-top:10px;margin-bottom:18px}
+  /* Hankemacht-Theme: minimalistisch, mit Logo oben links */
+  .pdf-preview.theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px;color:#000}
+  .pdf-preview.theme-hankemacht .hm-logo{margin:0 0 24px}
+  .pdf-preview.theme-hankemacht .hm-logo svg{width:140px;height:auto;max-width:100%;display:block}
+  .pdf-preview.theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-bottom:18px}
   .pdf-preview.theme-hankemacht .hm-header-info div{line-height:1.4}
   .pdf-preview.theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
   .pdf-preview.theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
@@ -344,6 +341,9 @@
   .pdf-preview.theme-hankemacht .hm-rights{margin-top:28px;font-size:9pt;line-height:1.5;color:#333}
   .pdf-preview.theme-hankemacht .hm-terms{margin-top:18px;font-size:10pt;line-height:1.5}
   .pdf-preview.theme-hankemacht .hm-footer-note{margin-top:14px;font-size:9pt;font-style:italic;color:#555}
+  .pdf-preview.theme-hankemacht .hm-footer-info{margin-top:40px;padding-top:14px;border-top:0.5px solid #ccc;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444;page-break-inside:avoid;break-inside:avoid}
+  .pdf-preview.theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
+  .pdf-preview.theme-hankemacht .hm-foot-col div{line-height:1.4}
 </style>
 </head>
 <body>
@@ -425,7 +425,7 @@ const DEFAULT_SETTINGS = {
   paymentTermsDays:14, invoicePrefix:'', invoiceCounter:1,
   invoiceFooterText:'Vielen Dank für die gute Zusammenarbeit.',
   invoiceTheme:'classic', invoiceAccent:'#2F5344',
-  rightsTransferText:'',
+  rightsTransferText:'Der Rechnungssteller überträgt [NAME/PRODUKTIONSFIRMA] die zeitlich, räumlich, sachlich und inhaltlich uneingeschränkten leistungsschutzrechtlichen Nutzungsrechte an seiner Darbietung oder sonstigen Leistung für die Produktion „[PRODUKTIONSNAME]". Durch die Bezahlung der Bruttovergütung sind die Nutzungsrechte an der Leistung des Rechnungsstellers zeitlich, räumlich, sachlich und inhaltlich bezüglich aller etwaig in der Zukunft entstehenden Verwendungs- und Nutzungsrechte abgegolten.',
   // Dropbox-Sync
   dbxAppKey:'', dbxRefreshToken:'', dbxAutoSync:true,
   dbxPath:'/hankebuch-daten.json',
@@ -997,6 +997,9 @@ function openInvoiceModal(invoiceId=null){
       footerNote:state.settings.invoiceFooterText||'',
       paymentTerms:`Bitte überweisen Sie den Rechnungsbetrag innerhalb von ${state.settings.paymentTermsDays} Tagen ohne Abzug.`,
       rightsTransfer:state.settings.rightsTransferText||'',
+      rightsEnabled:false,
+      rightsProductionCompany:'',
+      rightsProductionName:'',
       includeKleinunternehmerNotice:state.settings.kleinunternehmer,
     };
   } else {
@@ -1067,9 +1070,27 @@ function renderInvoiceModal(){
           <div class="field"><label>Fußnote</label>
             <textarea id="inv-footer">${escapeHtml(inv.footerNote||'')}</textarea>
           </div>
-          <div class="field"><label>Rechteübertragung (optional)</label>
-            <textarea id="inv-rights" placeholder="Leer lassen, wenn nicht benötigt">${escapeHtml(inv.rightsTransfer||'')}</textarea>
-            <div class="hint">Standardtext in den Einstellungen unter "Rechnungen" hinterlegbar.</div>
+          <div class="field">
+            <label class="toggle" style="padding:4px 0">
+              <input type="checkbox" id="inv-rights-enabled" ${inv.rightsEnabled?'checked':''}>
+              <span class="switch"></span>
+              <span class="label"><div class="t">Rechteübertragung auf die Rechnung drucken</div><div class="sub">Standardklausel wird eingefügt und mit deinen Angaben ergänzt.</div></span>
+            </label>
+          </div>
+          <div id="inv-rights-fields" style="${inv.rightsEnabled?'':'display:none'}">
+            <div class="field"><label>Name / Produktionsfirma</label>
+              <input type="text" id="inv-rights-company" value="${escapeAttr(inv.rightsProductionCompany||inv.customer?.name||'')}" placeholder="z.B. Beispielkunde GmbH">
+            </div>
+            <div class="field"><label>Produktionsname</label>
+              <input type="text" id="inv-rights-production" value="${escapeAttr(inv.rightsProductionName||'')}" placeholder="z.B. Frühlingskampagne 2026">
+            </div>
+            <details style="margin-top:8px">
+              <summary style="cursor:pointer;font-size:12px;color:var(--ink-muted)">Klausel-Text anpassen (optional)</summary>
+              <div class="field" style="margin-top:6px"><label>Klauseltext</label>
+                <textarea id="inv-rights" style="min-height:140px">${escapeHtml(inv.rightsTransfer||'')}</textarea>
+                <div class="hint">Platzhalter <code>[NAME/PRODUKTIONSFIRMA]</code> und <code>[PRODUKTIONSNAME]</code> werden beim Drucken durch deine Eingaben ersetzt.</div>
+              </div>
+            </details>
           </div>
           ${state.settings.kleinunternehmer?`<label class="toggle">
             <input type="checkbox" id="inv-klein" ${inv.includeKleinunternehmerNotice?'checked':''}>
@@ -1134,6 +1155,14 @@ function bindInvoiceForm(){
       }
     });
   });
+  // Rechteübertragung-Checkbox: Felder ein-/ausblenden
+  const rightsEn=document.getElementById('inv-rights-enabled');
+  if(rightsEn){
+    rightsEn.addEventListener('change',()=>{
+      const box=document.getElementById('inv-rights-fields');
+      if(box) box.style.display=rightsEn.checked?'':'none';
+    });
+  }
   document.querySelectorAll('[data-del-item]').forEach(b=>b.addEventListener('click',e=>{
     const idx=parseInt(b.dataset.delItem);
     collectInvoiceDraft();
@@ -1165,6 +1194,9 @@ function collectInvoiceDraft(){
   inv.paymentTerms=document.getElementById('inv-terms').value;
   inv.footerNote=document.getElementById('inv-footer').value;
   const rightsEl=document.getElementById('inv-rights'); if(rightsEl) inv.rightsTransfer=rightsEl.value;
+  const rightsEn=document.getElementById('inv-rights-enabled'); if(rightsEn) inv.rightsEnabled=rightsEn.checked;
+  const rightsCo=document.getElementById('inv-rights-company'); if(rightsCo) inv.rightsProductionCompany=rightsCo.value;
+  const rightsPr=document.getElementById('inv-rights-production'); if(rightsPr) inv.rightsProductionName=rightsPr.value;
   const k=document.getElementById('inv-klein');
   if(k)inv.includeKleinunternehmerNotice=k.checked;
   inv.items=Array.from(document.querySelectorAll('.inv-item')).map(row=>({
@@ -1336,25 +1368,6 @@ function renderInvoicePdfHankemacht(inv){
 
   return `
     <div class="pdf-preview theme-hankemacht">
-      <div class="hm-footer-info">
-        <div class="hm-foot-col">
-          <div class="hm-foot-title">Bankverbindung</div>
-          ${s.bankName?`<div>Kontoinhaber: ${escapeHtml(s.ownerName||'')}</div>`:''}
-          ${s.iban?`<div>IBAN: ${escapeHtml(s.iban)}</div>`:''}
-          ${s.bic?`<div>BIC: ${escapeHtml(s.bic)}</div>`:''}
-        </div>
-        <div class="hm-foot-col">
-          <div class="hm-foot-title">Kontaktiere uns</div>
-          ${s.email?`<div>Email: ${escapeHtml(s.email)}</div>`:''}
-          ${s.phone?`<div>Telefon: ${escapeHtml(s.phone)}</div>`:''}
-        </div>
-        <div class="hm-foot-col">
-          <div class="hm-foot-title">${escapeHtml(s.website||s.businessName||'Hankemacht.com')}</div>
-          ${s.street?`<div>${escapeHtml(s.street)}</div>`:''}
-          ${(s.zip||s.city)?`<div>${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>`:''}
-        </div>
-      </div>
-
       <div class="hm-logo">${HANKEMACHT_LOGO_SVG}</div>
 
       <div class="hm-header-info">
@@ -1421,6 +1434,25 @@ function renderInvoicePdfHankemacht(inv){
       ${inv.paymentTerms?`<p class="hm-terms">${escapeHtml(inv.paymentTerms).replace(/\n/g,'<br>')}${inv.dueDate?`<br><strong>Zahlbar bis ${fmtDate(inv.dueDate)}</strong>`:''}</p>`:''}
 
       ${inv.footerNote?`<p class="hm-footer-note">${escapeHtml(inv.footerNote)}</p>`:''}
+
+      <div class="hm-footer-info">
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">Bankverbindung</div>
+          ${s.bankName?`<div>Kontoinhaber: ${escapeHtml(s.ownerName||'')}</div>`:''}
+          ${s.iban?`<div>IBAN: ${escapeHtml(s.iban)}</div>`:''}
+          ${s.bic?`<div>BIC: ${escapeHtml(s.bic)}</div>`:''}
+        </div>
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">Kontaktiere uns</div>
+          ${s.email?`<div>Email: ${escapeHtml(s.email)}</div>`:''}
+          ${s.phone?`<div>Telefon: ${escapeHtml(s.phone)}</div>`:''}
+        </div>
+        <div class="hm-foot-col">
+          <div class="hm-foot-title">${escapeHtml(s.website||s.businessName||'Hankemacht.com')}</div>
+          ${s.street?`<div>${escapeHtml(s.street)}</div>`:''}
+          ${(s.zip||s.city)?`<div>${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>`:''}
+        </div>
+      </div>
     </div>`;
 }
 
@@ -1468,13 +1500,10 @@ function printInvoice(inv){
       .theme-elegant{font-family:Georgia,'Times New Roman',serif}
       .theme-elegant h1{font-family:Georgia,serif;font-style:italic;font-weight:400}
       .theme-elegant table.items th{font-style:italic;text-transform:none;letter-spacing:0;font-size:10pt}
-      .theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px 70px;position:relative;color:#000;min-height:1050px}
-      .theme-hankemacht .hm-footer-info{position:absolute;bottom:20px;left:40px;right:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444}
-      .theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
-      .theme-hankemacht .hm-foot-col div{line-height:1.4}
-      .theme-hankemacht .hm-logo{display:flex;justify-content:flex-start;margin:20px 0 10px;width:100%}
-      .theme-hankemacht .hm-logo svg{width:240px;height:auto;max-width:100%;display:block}
-      .theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-top:10px;margin-bottom:18px}
+      .theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px;color:#000}
+      .theme-hankemacht .hm-logo{margin:0 0 24px}
+      .theme-hankemacht .hm-logo svg{width:140px;height:auto;max-width:100%;display:block}
+      .theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-bottom:18px}
       .theme-hankemacht .hm-header-info div{line-height:1.4}
       .theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
       .theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
@@ -1491,6 +1520,9 @@ function printInvoice(inv){
       .theme-hankemacht .hm-rights{margin-top:28px;font-size:9pt;line-height:1.5;color:#333}
       .theme-hankemacht .hm-terms{margin-top:18px;font-size:10pt;line-height:1.5}
       .theme-hankemacht .hm-footer-note{margin-top:14px;font-size:9pt;font-style:italic;color:#555}
+      .theme-hankemacht .hm-footer-info{margin-top:40px;padding-top:14px;border-top:0.5px solid #ccc;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:7.5pt;color:#444;page-break-inside:avoid;break-inside:avoid}
+      .theme-hankemacht .hm-foot-title{font-weight:700;margin-bottom:3px}
+      .theme-hankemacht .hm-foot-col div{line-height:1.4}
       @media print{body{margin:0}@page{margin:0;size:A4}}
     </style></head><body>${html}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},250);};</scr`+`ipt></body></html>`);
   win.document.close();
