@@ -416,6 +416,8 @@ const appStorage = (function(){
   };
 })();
 
+const DEFAULT_RIGHTS_TEXT = 'Der Rechnungssteller überträgt [NAME/PRODUKTIONSFIRMA] die zeitlich, räumlich, sachlich und inhaltlich uneingeschränkten leistungsschutzrechtlichen Nutzungsrechte an seiner Darbietung oder sonstigen Leistung für die Produktion „[PRODUKTIONSNAME]". Durch die Bezahlung der Bruttovergütung sind die Nutzungsrechte an der Leistung des Rechnungsstellers zeitlich, räumlich, sachlich und inhaltlich bezüglich aller etwaig in der Zukunft entstehenden Verwendungs- und Nutzungsrechte abgegolten.';
+
 const DEFAULT_SETTINGS = {
   businessName:'Hankemacht', kleinunternehmer:false, vatCycle:'quarterly',
   hasTaxAdvisor:false, defaultVatRate:19, biweeklyReminder:true, reminderStartDate:null,
@@ -425,7 +427,7 @@ const DEFAULT_SETTINGS = {
   paymentTermsDays:14, invoicePrefix:'', invoiceCounter:1,
   invoiceFooterText:'Vielen Dank für die gute Zusammenarbeit.',
   invoiceTheme:'classic', invoiceAccent:'#2F5344',
-  rightsTransferText:'Der Rechnungssteller überträgt [NAME/PRODUKTIONSFIRMA] die zeitlich, räumlich, sachlich und inhaltlich uneingeschränkten leistungsschutzrechtlichen Nutzungsrechte an seiner Darbietung oder sonstigen Leistung für die Produktion „[PRODUKTIONSNAME]". Durch die Bezahlung der Bruttovergütung sind die Nutzungsrechte an der Leistung des Rechnungsstellers zeitlich, räumlich, sachlich und inhaltlich bezüglich aller etwaig in der Zukunft entstehenden Verwendungs- und Nutzungsrechte abgegolten.',
+  rightsTransferText:DEFAULT_RIGHTS_TEXT,
   // Dropbox-Sync
   dbxAppKey:'', dbxRefreshToken:'', dbxAutoSync:true,
   dbxPath:'/hankebuch-daten.json',
@@ -996,7 +998,7 @@ function openInvoiceModal(invoiceId=null){
       introText:'',
       footerNote:state.settings.invoiceFooterText||'',
       paymentTerms:`Bitte überweisen Sie den Rechnungsbetrag innerhalb von ${state.settings.paymentTermsDays} Tagen ohne Abzug.`,
-      rightsTransfer:state.settings.rightsTransferText||'',
+      rightsTransfer:state.settings.rightsTransferText || DEFAULT_RIGHTS_TEXT,
       rightsEnabled:false,
       rightsProductionCompany:'',
       rightsProductionName:'',
@@ -1279,11 +1281,13 @@ async function deleteInvoice(){
 }
 
 function resolveRightsTransferText(inv){
-  // Liefert fertig-gerenderten HTML-Block (oder leeren String)
+  // Liefert fertig-gerenderten Text (oder leeren String)
   const showNew=inv.rightsEnabled;
-  const showLegacy=!inv.rightsEnabled && inv.rightsTransfer && inv.rightsTransfer!==state.settings.rightsTransferText;
+  const showLegacy=!inv.rightsEnabled && inv.rightsTransfer && inv.rightsTransfer!==state.settings.rightsTransferText && inv.rightsTransfer.trim();
   if(!showNew && !showLegacy) return '';
-  let text=inv.rightsTransfer||'';
+  // Fallback-Kette: inv.rightsTransfer → settings.rightsTransferText → hartkodierter Default
+  let text=inv.rightsTransfer || state.settings.rightsTransferText || DEFAULT_RIGHTS_TEXT;
+  if(!text.trim()) text=DEFAULT_RIGHTS_TEXT;
   if(showNew){
     text=text.replace(/\[NAME\/PRODUKTIONSFIRMA\]/g, inv.rightsProductionCompany||'[NAME/PRODUKTIONSFIRMA]');
     text=text.replace(/\[PRODUKTIONSNAME\]/g, inv.rightsProductionName||'[PRODUKTIONSNAME]');
@@ -1652,9 +1656,9 @@ function renderTabInvoice(){
     <div class="field"><label>Standard-Fußnote</label>
       <textarea id="s-footer">${escapeHtml(s.invoiceFooterText||'')}</textarea>
     </div>
-    <div class="field"><label>Standard-Rechteübertragungstext (optional)</label>
-      <textarea id="s-rights" placeholder="Bleibt leer, wenn du keine Rechteübertragungsklausel brauchst" style="min-height:80px">${escapeHtml(s.rightsTransferText||'')}</textarea>
-      <div class="hint">Wird unter den Summen gedruckt, wenn in der Rechnung aktiviert. Nützlich für Illustrator:innen, Fotograf:innen, Texter:innen etc.</div>
+    <div class="field"><label>Standard-Rechteübertragungstext</label>
+      <textarea id="s-rights" placeholder="Klausel wird verwendet, wenn du bei einer Rechnung „Rechteübertragung drucken" aktivierst." style="min-height:140px">${escapeHtml(s.rightsTransferText||DEFAULT_RIGHTS_TEXT)}</textarea>
+      <div class="hint">Platzhalter <code>[NAME/PRODUKTIONSFIRMA]</code> und <code>[PRODUKTIONSNAME]</code> werden pro Rechnung ausgefüllt. <a href="#" data-action="reset-rights-text">Auf Standard zurücksetzen</a></div>
     </div>
     <div class="divider">Design</div>
     <div class="field"><label>Stil</label>
@@ -2164,6 +2168,12 @@ function handleAction(e){
     case 'bulk-upload':document.getElementById('bulk-file').click();break;
     case 'clear-data':clearAllData();break;
     case 'test-invoice':showTestInvoice();break;
+    case 'reset-rights-text':{
+      e.preventDefault();
+      const el=document.getElementById('s-rights');
+      if(el){ el.value=DEFAULT_RIGHTS_TEXT; toast('Standardtext wiederhergestellt'); }
+      break;
+    }
     case 'dbx-start-auth':
       state.settings.dbxAppKey=document.getElementById('s-dbxkey').value.trim();
       state.settings.dbxPath=document.getElementById('s-dbxpath').value.trim()||'/hankebuch-daten.json';
