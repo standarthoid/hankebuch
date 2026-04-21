@@ -322,10 +322,10 @@
 
   /* Hankemacht-Theme: minimalistisch, mit Logo oben links */
   .pdf-preview.theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px;color:#000}
-  .pdf-preview.theme-hankemacht .hm-logo{margin:0 0 24px}
-  .pdf-preview.theme-hankemacht .hm-logo svg{width:140px;height:auto;max-width:100%;display:block}
-  .pdf-preview.theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-bottom:18px}
-  .pdf-preview.theme-hankemacht .hm-header-info div{line-height:1.4}
+  .pdf-preview.theme-hankemacht .hm-top{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 18px}
+  .pdf-preview.theme-hankemacht .hm-logo{margin:0;flex-shrink:0}
+  .pdf-preview.theme-hankemacht .hm-logo svg{width:140px;height:auto;display:block}
+  .pdf-preview.theme-hankemacht .hm-top-info{font-size:9pt;color:#333;line-height:1.5;text-align:right}
   .pdf-preview.theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
   .pdf-preview.theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
   .pdf-preview.theme-hankemacht .hm-h1{font-size:16pt;font-weight:700;letter-spacing:2px;margin:24px 0 14px;text-transform:uppercase;color:#000}
@@ -1278,6 +1278,19 @@ async function deleteInvoice(){
   closeModal();render();
 }
 
+function resolveRightsTransferText(inv){
+  // Liefert fertig-gerenderten HTML-Block (oder leeren String)
+  const showNew=inv.rightsEnabled;
+  const showLegacy=!inv.rightsEnabled && inv.rightsTransfer && inv.rightsTransfer!==state.settings.rightsTransferText;
+  if(!showNew && !showLegacy) return '';
+  let text=inv.rightsTransfer||'';
+  if(showNew){
+    text=text.replace(/\[NAME\/PRODUKTIONSFIRMA\]/g, inv.rightsProductionCompany||'[NAME/PRODUKTIONSFIRMA]');
+    text=text.replace(/\[PRODUKTIONSNAME\]/g, inv.rightsProductionName||'[PRODUKTIONSNAME]');
+  }
+  return text;
+}
+
 function renderInvoicePdfHTML(inv){
   const s=state.settings;
   // Spezielles Layout für Hankemacht-Theme
@@ -1339,6 +1352,7 @@ function renderInvoicePdfHTML(inv){
         </table>
       </div>
       ${klein?`<p class="pdf-text" style="font-size:9pt;color:#444"><i>Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.</i></p>`:''}
+      ${(function(){const rt=resolveRightsTransferText(inv); return rt?`<div class="pdf-text" style="margin-top:18px;font-size:9.5pt;line-height:1.5"><strong>Rechteübertragung</strong><br>${escapeHtml(rt).replace(/\n/g,'<br>')}</div>`:'';})()}
       ${inv.paymentTerms?`<p class="pdf-text">${escapeHtml(inv.paymentTerms).replace(/\n/g,'<br>')}${inv.dueDate?`<br><strong>Zahlbar bis ${fmtDate(inv.dueDate)}</strong>`:''}</p>`:''}
       ${s.iban?`<p class="pdf-text" style="font-size:9.5pt"><strong>Bankverbindung:</strong> ${escapeHtml(s.bankName||'')} · IBAN ${escapeHtml(s.iban)}${s.bic?` · BIC ${escapeHtml(s.bic)}`:''}<br>Verwendungszweck: ${escapeHtml(inv.number)}</p>`:''}
       ${inv.footerNote?`<p class="pdf-text" style="font-style:italic">${escapeHtml(inv.footerNote)}</p>`:''}
@@ -1368,23 +1382,16 @@ function renderInvoicePdfHankemacht(inv){
 
   return `
     <div class="pdf-preview theme-hankemacht">
-      <div class="hm-logo">${HANKEMACHT_LOGO_SVG}</div>
-
-      <div class="hm-header-info">
-        <div>
-          <div style="font-weight:600">${escapeHtml(s.businessName||'Hankemacht.com')}</div>
-          <div>${escapeHtml(s.ownerName||'')}</div>
-          <div>${escapeHtml(s.street||'')}</div>
-          <div>${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>
-        </div>
-        <div style="text-align:right">
+      <div class="hm-top">
+        <div class="hm-logo">${HANKEMACHT_LOGO_SVG}</div>
+        <div class="hm-top-info">
           ${s.email?`<div>Email: ${escapeHtml(s.email)}</div>`:''}
           ${s.taxNumber?`<div>Steuer-Nummer: ${escapeHtml(s.taxNumber)}</div>`:''}
           ${s.vatId?`<div>USt-IdNr.: ${escapeHtml(s.vatId)}</div>`:''}
         </div>
       </div>
 
-      <div class="hm-sender-bar">${escapeHtml(s.businessName||'Hankemacht.com')} &ndash; ${escapeHtml(s.street||'')} &ndash; ${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>
+      <div class="hm-sender-bar">${escapeHtml(s.businessName||'Hankemacht.com')}${s.ownerName?` &ndash; ${escapeHtml(s.ownerName)}`:''}${s.street?` &ndash; ${escapeHtml(s.street)}`:''}${(s.zip||s.city)?` &ndash; ${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}`:''}</div>
 
       <div class="hm-recipient">
         <div style="font-weight:600">${escapeHtml(inv.customer.name||'')}</div>
@@ -1429,7 +1436,7 @@ function renderInvoicePdfHankemacht(inv){
         </tbody>
       </table>
 
-      ${inv.rightsTransfer?`<div class="hm-rights"><strong>Rechteübertragung</strong><br>${escapeHtml(inv.rightsTransfer).replace(/\n/g,'<br>')}</div>`:''}
+      ${(function(){const rt=resolveRightsTransferText(inv); return rt?`<div class="hm-rights"><strong>Rechteübertragung</strong><br>${escapeHtml(rt).replace(/\n/g,'<br>')}</div>`:'';})()}
 
       ${inv.paymentTerms?`<p class="hm-terms">${escapeHtml(inv.paymentTerms).replace(/\n/g,'<br>')}${inv.dueDate?`<br><strong>Zahlbar bis ${fmtDate(inv.dueDate)}</strong>`:''}</p>`:''}
 
@@ -1501,10 +1508,10 @@ function printInvoice(inv){
       .theme-elegant h1{font-family:Georgia,serif;font-style:italic;font-weight:400}
       .theme-elegant table.items th{font-style:italic;text-transform:none;letter-spacing:0;font-size:10pt}
       .theme-hankemacht{font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif;padding:30px 40px;color:#000}
-      .theme-hankemacht .hm-logo{margin:0 0 24px}
-      .theme-hankemacht .hm-logo svg{width:140px;height:auto;max-width:100%;display:block}
-      .theme-hankemacht .hm-header-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:8.5pt;color:#333;margin-bottom:18px}
-      .theme-hankemacht .hm-header-info div{line-height:1.4}
+      .theme-hankemacht .hm-top{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 18px}
+      .theme-hankemacht .hm-logo{margin:0;flex-shrink:0}
+      .theme-hankemacht .hm-logo svg{width:140px;height:auto;display:block}
+      .theme-hankemacht .hm-top-info{font-size:9pt;color:#333;line-height:1.5;text-align:right}
       .theme-hankemacht .hm-sender-bar{font-size:7.5pt;border-bottom:0.5px solid #999;padding-bottom:3px;margin-top:10px;color:#666}
       .theme-hankemacht .hm-recipient{margin:14px 0 30px;font-size:10pt;line-height:1.4}
       .theme-hankemacht .hm-h1{font-size:16pt;font-weight:700;letter-spacing:2px;margin:24px 0 14px;text-transform:uppercase;color:#000}
