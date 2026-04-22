@@ -439,7 +439,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const INCOME_CATEGORIES = ['Dienstleistungen','Warenverkauf','Lizenz-/Nutzungsrechte','Provisionen','Mieteinnahmen','Zinserträge','Sonstige Einnahmen'];
-const EXPENSE_CATEGORIES = ['Wareneinkauf','Fremdleistungen','Personalkosten','Raumkosten (Miete)','Nebenkosten (Strom, Heizung)','Bürobedarf','Porto & Versand','Telefon & Internet','Reisekosten','Kfz-Kosten','Bewirtung','Werbung & Marketing','Versicherungen','Fortbildung & Literatur','Beratungskosten (Steuerberater, Anwalt)','Software & IT-Abos','Geringwertige Wirtschaftsgüter','Abschreibungen (AfA)','Bankgebühren','Zahlungsanbieter-Gebühren (Stripe, PayPal)','Gewerbesteuer / sonstige Steuern','Sonstige Ausgaben'];
+const EXPENSE_CATEGORIES = ['Wareneinkauf','Fremdleistungen','Anbieter-Auszahlungen (Marketplace)','Personalkosten','Raumkosten (Miete)','Nebenkosten (Strom, Heizung)','Bürobedarf','Porto & Versand','Telefon & Internet','Reisekosten','Kfz-Kosten','Bewirtung','Werbung & Marketing','Versicherungen','Fortbildung & Literatur','Beratungskosten (Steuerberater, Anwalt)','Software & IT-Abos','Geringwertige Wirtschaftsgüter','Abschreibungen (AfA)','Bankgebühren','Zahlungsanbieter-Gebühren (Stripe, PayPal)','Gewerbesteuer / sonstige Steuern','Sonstige Ausgaben'];
 const VAT_RATES = [0, 7, 19];
 
 const VIEWS = {
@@ -2326,21 +2326,131 @@ async function saveCreditNoteFromGenerator(){
 async function deleteCreditNote(id){
   const cn=state.creditNotes.find(c=>c.id===id);
   if(!cn)return;
-  if(!confirm(`Gutschrift ${cn.number} wirklich löschen?`))return;
+  // Prüfen ob Ausgabe verknüpft ist
+  const linkedExpense=state.transactions.find(t=>t.creditNoteId===cn.id);
+  let deleteExpense=false;
+  if(linkedExpense){
+    const msg=`Gutschrift ${cn.number} ist mit einer Ausgabe (${fmtEUR(linkedExpense.gross)} am ${fmtDate(linkedExpense.date)}) verknüpft.\n\nGutschrift UND Ausgabe löschen? Wenn du "Abbrechen" wählst, wird nichts gelöscht.`;
+    if(!confirm(msg))return;
+    deleteExpense=true;
+  } else {
+    if(!confirm(`Gutschrift ${cn.number} wirklich löschen?`))return;
+  }
   state.creditNotes=state.creditNotes.filter(c=>c.id!==id);
+  if(deleteExpense && linkedExpense){
+    state.transactions=state.transactions.filter(t=>t.id!==linkedExpense.id);
+    await saveTransactions();
+  }
   await saveCreditNotes();
-  toast('Gutschrift gelöscht');
+  toast(deleteExpense?'Gutschrift und Ausgabe gelöscht':'Gutschrift gelöscht');
   closeModal();render();
 }
 
 async function markCreditNotePaid(id){
   const cn=state.creditNotes.find(c=>c.id===id);
   if(!cn)return;
+  // Prüfen ob für diese Gutschrift schon eine Ausgabe existiert
+  const existingExpense=state.transactions.find(t=>t.creditNoteId===cn.id);
+  if(existingExpense){
+    // Schon gebucht – nur Status setzen
+    cn.status='paid';
+    if(!cn.paymentDate)cn.paymentDate=todayISO();
+    await saveCreditNotes();
+    toast('Als bezahlt markiert (Ausgabe war schon gebucht)');
+    closeModal();render();
+    return;
+  }
+  // Dialog öffnen: Soll Ausgabe gebucht werden?
+  openCreditNotePaidDialog(cn);
+}
+
+function openCreditNotePaidDialog(cn){
+  const v=state.vendors.find(x=>x.id===cn.vendorId);
+  const vName=v?.name||cn.vendorSnapshot?.name||'Anbieter';
+  const today=todayISO();
+  document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" data-close-modal><div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head"><h2>Gutschrift als bezahlt markieren</h2><button class="modal-close" data-close-modal>${ICON.close}</button></div>
+
+    <div style="background:var(--bg-sunk);padding:12px;border-radius:8px;margin-bottom:14px;font-size:14px">
+      <div><strong>${escapeHtml(cn.number)}</strong> · ${escapeHtml(vName)}</div>
+      <div style="color:var(--ink-muted);font-size:13px;margin-top:4px">Auszahlungsbetrag: <strong class="num" style="font-variant-numeric:tabular-nums">${fmtEUR(cn.totalGross)}</strong></div>
+    </div>
+
+    <div style="font-size:14px;line-height:1.5;margin-bottom:14px">
+      Soll Hankebuch die Auszahlung auch als <strong>Ausgabe</strong> in die Buchhaltung übernehmen? Das ist meistens die sinnvolle Wahl — so stimmt deine EÜR automatisch und die Gutschrift-PDF wird als Beleg angehängt.
+    </div>
+
+    <div class="field-row">
+      <div class="field"><label>Zahlungsdatum</label>
+        <input type="date" id="cnp-date" value="${today}">
+      </div>
+      <div class="field"><label>Kategorie</label>
+        <select id="cnp-category">
+          ${EXPENSE_CATEGORIES.map(c=>`<option value="${escapeAttr(c)}" ${c==='Anbieter-Auszahlungen (Marketplace)'?'selected':''}>${escapeHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:var(--ink-muted);margin-top:10px;line-height:1.5">
+      ${cn.vatRate>0?`Vorsteuer: ${cn.vatRate}% = ${fmtEUR(cn.totalVat)} wird erfasst.`:'Keine Vorsteuer (Kleinunternehmer §19 UStG).'}
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" data-action="confirm-paid-with-expense" data-id="${cn.id}">Ja, als Ausgabe buchen</button>
+      <button class="btn" data-action="confirm-paid-without-expense" data-id="${cn.id}">Nein, nur bezahlt-Status setzen</button>
+    </div>
+  </div></div>`;
+  bindModal();
+}
+
+async function confirmPaidWithExpense(id){
+  const cn=state.creditNotes.find(c=>c.id===id);
+  if(!cn)return;
+  const paymentDate=document.getElementById('cnp-date')?.value||todayISO();
+  const category=document.getElementById('cnp-category')?.value||'Anbieter-Auszahlungen (Marketplace)';
+  const v=state.vendors.find(x=>x.id===cn.vendorId);
+  const vName=v?.name||cn.vendorSnapshot?.name||'Anbieter';
+
+  // Ausgabe-Transaktion anlegen
+  const expense={
+    id:uid('tx'),
+    type:'expense',
+    date:paymentDate,
+    description:`${cn.number} · ${vName}`,
+    contact:vName,
+    invoiceNumber:cn.number,
+    category,
+    gross:cn.totalGross,
+    net:cn.totalNet,
+    vat:cn.totalVat,
+    vatRate:cn.vatRate,
+    notes:`Marketplace-Auszahlung für Zeitraum ${fmtDate(cn.periodFrom)} – ${fmtDate(cn.periodTo)}. Automatisch aus Gutschrift gebucht.`,
+    receiptIds:[],
+    creditNoteId:cn.id,
+    createdAt:new Date().toISOString(),
+  };
+  state.transactions.push(expense);
+
+  // Gutschrift als bezahlt markieren und Verknüpfung speichern
   cn.status='paid';
-  cn.paymentDate=todayISO();
+  cn.paymentDate=paymentDate;
+  cn.expenseTxId=expense.id;
+
+  await saveTransactions();
+  await saveCreditNotes();
+  toast(`Gutschrift bezahlt & Ausgabe ${fmtEUR(cn.totalGross)} gebucht`);
+  closeModal();render();
+}
+
+async function confirmPaidWithoutExpense(id){
+  const cn=state.creditNotes.find(c=>c.id===id);
+  if(!cn)return;
+  const paymentDate=document.getElementById('cnp-date')?.value||todayISO();
+  cn.status='paid';
+  cn.paymentDate=paymentDate;
   await saveCreditNotes();
   toast('Als bezahlt markiert');
-  render();
+  closeModal();render();
 }
 
 async function markCreditNoteSent(id){
@@ -2409,6 +2519,7 @@ function openCreditNoteDetailModal(id){
   const v=state.vendors.find(x=>x.id===cn.vendorId);
   const vSnap=cn.vendorSnapshot||{};
   const vendorName=v?.name||vSnap.name||'(gelöscht)';
+  const linkedExpense=state.transactions.find(t=>t.creditNoteId===cn.id);
   document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" data-close-modal><div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head"><h2>Gutschrift ${escapeHtml(cn.number)}</h2><button class="modal-close" data-close-modal>${ICON.close}</button></div>
 
@@ -2424,6 +2535,17 @@ function openCreditNoteDetailModal(id){
         <div style="color:var(--ink-muted);font-weight:600">Gesamt</div><div class="num" style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${fmtEUR(cn.totalGross)}</div>
       </div>
     </div>
+
+    ${linkedExpense?`
+      <div style="background:rgba(47,83,68,0.08);padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:16px">✓</span>
+        <div style="flex:1">
+          <div><strong>Als Ausgabe verbucht</strong></div>
+          <div style="color:var(--ink-muted);font-size:12px">${escapeHtml(linkedExpense.category)} · ${fmtDate(linkedExpense.date)} · ${fmtEUR(linkedExpense.gross)}</div>
+        </div>
+        <button class="btn btn-sm" data-edit="${linkedExpense.id}">Öffnen</button>
+      </div>
+    `:''}
 
     <details ${cn.lines?.length<=5?'open':''}>
       <summary style="cursor:pointer;font-size:13px;color:var(--ink-muted);margin-bottom:8px">${cn.lines?.length||0} Positionen</summary>
@@ -3110,6 +3232,8 @@ function handleAction(e){
     case 'print-credit-note':printCreditNote(id);break;
     case 'mail-credit-note':mailCreditNote(id);break;
     case 'mark-paid':markCreditNotePaid(id);break;
+    case 'confirm-paid-with-expense':confirmPaidWithExpense(id);break;
+    case 'confirm-paid-without-expense':confirmPaidWithoutExpense(id);break;
     case 'save-tx':saveTxFromModal(id);break;
     case 'delete-tx':deleteTx(id);break;
     case 'toggle-select':state.selectMode=!state.selectMode;if(!state.selectMode)state.selectedIds=new Set();render();break;
