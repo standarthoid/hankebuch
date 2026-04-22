@@ -571,16 +571,22 @@ async function dbxStartAuth(){
   try{
     const verifier=dbxRandomString(64);
     state.dbx.pkceVerifier=verifier;
-    // Verifier muss persistent sein, weil wir den Tab verlassen
+    // Verifier muss persistent sein, weil das Auth-Fenster separat läuft
     await appStorage.set('_dbxPkceVerifier', verifier);
-    // Auch merken, dass wir gerade in einem Auth-Flow sind
     await appStorage.set('_dbxAuthPending', '1');
     const challenge=await dbxChallenge(verifier);
     const url=`${DBX_AUTH_URL}?client_id=${encodeURIComponent(appKey)}`
       +`&response_type=code&code_challenge=${challenge}&code_challenge_method=S256`
       +`&token_access_type=offline`;
-    // Direkt navigieren statt window.open – umgeht iOS-Pop-up-Blocker zuverlässig
-    window.location.href=url;
+    // In neuem Tab öffnen; Hankebuch bleibt im aktuellen Tab geöffnet
+    const win=window.open(url,'_blank');
+    if(!win||win.closed||typeof win.closed==='undefined'){
+      // Pop-up wurde blockiert – fallback auf gleichen Tab
+      toast('Pop-ups blockiert — wechsle zum Dropbox-Login');
+      setTimeout(()=>{window.location.href=url;},800);
+    } else {
+      toast('Dropbox wurde in neuem Tab geöffnet. Nach dem Login kopiere den Code zurück in Hankebuch.');
+    }
   }catch(e){
     toast('Fehler beim Vorbereiten: '+e.message);
   }
