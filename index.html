@@ -139,6 +139,10 @@
   .list{display:flex;flex-direction:column}
   .tx-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer}
   .tx-item:hover{background:var(--bg-sunk)}
+  .tx-item.selected{background:rgba(47,83,68,0.08)}
+  .tx-item.selected:hover{background:rgba(47,83,68,0.14)}
+  .tx-check{display:flex;align-items:center;padding:0 4px 0 0;cursor:pointer}
+  .tx-check input[type="checkbox"]{width:18px;height:18px;cursor:pointer;margin:0}
   .tx-item:last-child{border-bottom:none}
   .tx-dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
   .tx-item.expense .tx-dot{background:var(--terra)}
@@ -488,6 +492,7 @@ const state = {
   settings:{...DEFAULT_SETTINGS}, loading:true,
   pendingReceipts:[], _removedReceipts:[],
   settingsTab:'company', invoiceDraft:null,
+  selectMode:false, selectedIds:new Set(),
   _dbxPending:false,
   // Sync-Status (nicht persistent)
   dbx:{ accessToken:null, accessTokenExpires:0, syncStatus:'idle', lastSync:null, lastError:null, saveTimer:null, pkceVerifier:null, remoteRev:null },
@@ -906,10 +911,16 @@ function renderTransactionList(type){
   const totalNet=sumNet(f);const totalGross=sumGross(f);
   const cats=type==='income'?INCOME_CATEGORIES:EXPENSE_CATEGORIES;
   const lbl=type==='income'?'Einnahmen':'Ausgaben';
+  const visibleIds=f.map(t=>t.id);
+  const selectedVisible=visibleIds.filter(id=>state.selectedIds.has(id)).length;
+  const allVisibleSelected=visibleIds.length>0 && selectedVisible===visibleIds.length;
   return `
     <div class="row" style="margin-bottom:16px">
       <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>${lbl}</b> ${state.year}</h1>
-      <button class="btn ${type==='income'?'btn-green':'btn-terra'}" data-action="new-${type}">${ICON.plus} Neu</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-action="toggle-select">${state.selectMode?'Fertig':'Auswählen'}</button>
+        <button class="btn ${type==='income'?'btn-green':'btn-terra'}" data-action="new-${type}">${ICON.plus} Neu</button>
+      </div>
     </div>
     <div class="filter-bar">
       <select class="pill" id="month-filter">
@@ -923,6 +934,17 @@ function renderTransactionList(type){
       </select>
       <input type="text" class="search" id="search-input" placeholder="Suchen…" value="${escapeAttr(state.search)}">
     </div>
+    ${state.selectMode?`
+      <div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-2, #efeadd)">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+          <input type="checkbox" data-action="select-all-visible" ${allVisibleSelected?'checked':''}>
+          Sichtbare auswählen
+        </label>
+        <div style="flex:1;font-size:13px;color:var(--ink-muted)">${state.selectedIds.size} ausgewählt</div>
+        <button class="btn btn-sm" data-action="clear-selection" ${state.selectedIds.size===0?'disabled':''}>Auswahl aufheben</button>
+        <button class="btn btn-sm" style="background:var(--terra);color:#fff;border-color:var(--terra)" data-action="bulk-delete" ${state.selectedIds.size===0?'disabled':''}>${ICON.trash} ${state.selectedIds.size} löschen</button>
+      </div>
+    `:''}
     <div class="card">
       ${f.length?`<div class="list">${f.map(renderTxItem).join('')}</div>
         <div style="display:flex;justify-content:space-between;padding-top:14px;margin-top:10px;border-top:1px solid var(--ink);font-weight:600">
@@ -933,7 +955,11 @@ function renderTransactionList(type){
 }
 function renderTxItem(t){
   const has=(t.receiptIds||[]).length>0;
-  return `<div class="tx-item ${t.type}" data-edit="${t.id}">
+  const isSelected=state.selectedIds.has(t.id);
+  const cb=state.selectMode?`<label class="tx-check" onclick="event.stopPropagation()"><input type="checkbox" data-select-tx="${t.id}" ${isSelected?'checked':''}></label>`:'';
+  const clickAttr=state.selectMode?`data-select-tx-row="${t.id}"`:`data-edit="${t.id}"`;
+  return `<div class="tx-item ${t.type} ${isSelected?'selected':''}" ${clickAttr}>
+    ${cb}
     <div class="tx-dot"></div>
     <div class="tx-main">
       <div class="tx-desc">${escapeHtml(t.description||'(Ohne Beschreibung)')}${has?`<span class="paperclip">${ICON.paper}${t.receiptIds.length}</span>`:''}</div>
@@ -2222,11 +2248,25 @@ async function importJSON(file){try{const text=await file.text();const data=JSON
 function download(filename,content,mime){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},100);}
 
 function attachEvents(){
-  document.querySelectorAll('.bottom-nav button').forEach(btn=>btn.addEventListener('click',()=>{state.view=btn.dataset.view;state.monthFilter='all';state.categoryFilter='all';state.search='';render();}));
+  document.querySelectorAll('.bottom-nav button').forEach(btn=>btn.addEventListener('click',()=>{state.view=btn.dataset.view;state.monthFilter='all';state.categoryFilter='all';state.search='';state.selectMode=false;state.selectedIds=new Set();render();}));
   const ys=document.getElementById('year-select');if(ys)ys.addEventListener('change',e=>{state.year=parseInt(e.target.value);render();});
   const bs=document.getElementById('btn-settings');if(bs)bs.addEventListener('click',()=>openSettings());
   document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',handleAction));
   document.querySelectorAll('[data-edit]').forEach(el=>el.addEventListener('click',()=>openTxModal(null,el.dataset.edit)));
+  // Auswahlmodus: Checkbox in Zeile
+  document.querySelectorAll('[data-select-tx]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    const id=el.dataset.selectTx;
+    if(el.checked)state.selectedIds.add(id);else state.selectedIds.delete(id);
+    render();
+  }));
+  // Auswahlmodus: ganze Zeile klickbar
+  document.querySelectorAll('[data-select-tx-row]').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('input[type="checkbox"]'))return;
+    const id=el.dataset.selectTxRow;
+    if(state.selectedIds.has(id))state.selectedIds.delete(id);else state.selectedIds.add(id);
+    render();
+  }));
   document.querySelectorAll('[data-edit-invoice]').forEach(el=>el.addEventListener('click',()=>openInvoiceModal(el.dataset.editInvoice)));
   document.querySelectorAll('[data-view-goto]').forEach(el=>el.addEventListener('click',()=>{state.view=el.dataset.viewGoto;render();}));
   document.querySelectorAll('[data-open-settings]').forEach(el=>el.addEventListener('click',()=>openSettings(el.dataset.openSettings)));
@@ -2243,6 +2283,10 @@ function handleAction(e){
     case 'new-invoice':openInvoiceModal();break;
     case 'save-tx':saveTxFromModal(id);break;
     case 'delete-tx':deleteTx(id);break;
+    case 'toggle-select':state.selectMode=!state.selectMode;if(!state.selectMode)state.selectedIds=new Set();render();break;
+    case 'bulk-delete':bulkDeleteSelected();break;
+    case 'clear-selection':state.selectedIds=new Set();render();break;
+    case 'select-all-visible':toggleSelectAllVisible(e.currentTarget.checked);break;
     case 'save-settings':saveSettingsFromModal();break;
     case 'save-invoice':saveInvoice().then(inv=>{if(inv){closeModal();render();}});break;
     case 'save-and-pdf':saveInvoice().then(inv=>{if(inv){printInvoice(inv);closeModal();render();}});break;
@@ -2394,8 +2438,8 @@ function showReceiptViewer(r){
 function attachTxModalExtras(editId){
   const gross=document.getElementById('f-gross');const vat=document.getElementById('f-vat');
   if(gross)gross.addEventListener('input',updateTxPreview);if(vat)vat.addEventListener('change',updateTxPreview);updateTxPreview();
-  const delBtn=document.querySelector('[data-action="delete-tx"]');if(delBtn)delBtn.addEventListener('click',()=>deleteTx(editId));
-  const saveBtn=document.querySelector('[data-action="save-tx"]');if(saveBtn)saveBtn.addEventListener('click',()=>saveTxFromModal(editId));
+  // Hinweis: delete-tx und save-tx werden durch den globalen Action-Handler behandelt.
+  // KEIN zusätzlicher addEventListener hier, sonst feuert alles doppelt.
   const zone=document.getElementById('drop-zone');const fi=document.getElementById('receipt-file');
   if(zone&&fi){zone.addEventListener('click',()=>fi.click());fi.addEventListener('change',e=>handleReceiptFiles(Array.from(e.target.files)));zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag');});zone.addEventListener('dragleave',()=>zone.classList.remove('drag'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag');const files=Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/')||f.type==='application/pdf');handleReceiptFiles(files);});}
   bindReceiptGridEvents();
@@ -2455,6 +2499,41 @@ async function saveTxFromModal(editId){
 async function deleteTx(id){if(!id)return;if(!confirm('Buchung wirklich löschen?'))return;
   const tx=state.transactions.find(t=>t.id===id);if(tx?.receiptIds)for(const rid of tx.receiptIds)await deleteReceiptStore(rid);
   state.transactions=state.transactions.filter(t=>t.id!==id);await saveTransactions();toast('Gelöscht');closeModal();render();
+}
+
+function toggleSelectAllVisible(checked){
+  // Finde alle sichtbaren Einträge (wie in renderTransactionList gefiltert)
+  const type=state.view;
+  if(type!=='income'&&type!=='expense')return;
+  const all=state.transactions.filter(t=>t.type===type&&t.date.startsWith(String(state.year)));
+  let f=all;
+  if(state.monthFilter!=='all'){
+    if(typeof state.monthFilter==='number')f=f.filter(t=>parseInt(t.date.slice(5,7),10)-1===state.monthFilter);
+    else if(state.monthFilter.startsWith('q')){const q=parseInt(state.monthFilter.slice(1));f=f.filter(t=>quarterOf(t.date)===q);}
+  }
+  if(state.categoryFilter!=='all')f=f.filter(t=>t.category===state.categoryFilter);
+  if(state.search.trim()){const q=state.search.toLowerCase();f=f.filter(t=>(t.description||'').toLowerCase().includes(q)||(t.contact||'').toLowerCase().includes(q)||(t.invoiceNumber||'').toLowerCase().includes(q));}
+  if(checked){f.forEach(t=>state.selectedIds.add(t.id));}
+  else{f.forEach(t=>state.selectedIds.delete(t.id));}
+  render();
+}
+
+async function bulkDeleteSelected(){
+  const ids=Array.from(state.selectedIds);
+  if(!ids.length)return;
+  if(!confirm(`${ids.length} Buchung${ids.length===1?'':'en'} wirklich löschen? Das kann nicht rückgängig gemacht werden.`))return;
+  // Zugehörige Belege auch entfernen
+  for(const id of ids){
+    const tx=state.transactions.find(t=>t.id===id);
+    if(tx?.receiptIds)for(const rid of tx.receiptIds)await deleteReceiptStore(rid);
+  }
+  state.transactions=state.transactions.filter(t=>!state.selectedIds.has(t.id));
+  const count=ids.length;
+  state.selectedIds=new Set();
+  state.selectMode=false;
+  await saveTransactions();
+  toast(`${count} Buchung${count===1?'':'en'} gelöscht`);
+  render();
 }
 
 async function saveSettingsFromModal(){
