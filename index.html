@@ -568,26 +568,29 @@ async function dbxChallenge(verifier){
 async function dbxStartAuth(){
   const appKey=state.settings.dbxAppKey?.trim();
   if(!appKey){toast('Bitte App-Key eingeben');return;}
+  // WICHTIG: window.open MUSS synchron im Klick-Handler passieren, sonst blockiert iOS.
+  // Daher öffnen wir das Fenster sofort mit about:blank und setzen die URL erst später.
+  const win=window.open('about:blank','_blank');
   try{
     const verifier=dbxRandomString(64);
     state.dbx.pkceVerifier=verifier;
-    // Verifier muss persistent sein, weil das Auth-Fenster separat läuft
     await appStorage.set('_dbxPkceVerifier', verifier);
     await appStorage.set('_dbxAuthPending', '1');
     const challenge=await dbxChallenge(verifier);
     const url=`${DBX_AUTH_URL}?client_id=${encodeURIComponent(appKey)}`
       +`&response_type=code&code_challenge=${challenge}&code_challenge_method=S256`
       +`&token_access_type=offline`;
-    // In neuem Tab öffnen; Hankebuch bleibt im aktuellen Tab geöffnet
-    const win=window.open(url,'_blank');
-    if(!win||win.closed||typeof win.closed==='undefined'){
-      // Pop-up wurde blockiert – fallback auf gleichen Tab
-      toast('Pop-ups blockiert — wechsle zum Dropbox-Login');
-      setTimeout(()=>{window.location.href=url;},800);
+    if(win && !win.closed){
+      // Pop-up erfolgreich – URL nachträglich setzen
+      win.location.href=url;
+      toast('Dropbox in neuem Tab geöffnet. Nach dem Login den Code hier einfügen.');
     } else {
-      toast('Dropbox wurde in neuem Tab geöffnet. Nach dem Login kopiere den Code zurück in Hankebuch.');
+      // Blocker hat zugeschlagen – Fallback: gleicher Tab
+      toast('Pop-ups blockiert – öffne Dropbox im gleichen Tab…');
+      setTimeout(()=>{window.location.href=url;},1000);
     }
   }catch(e){
+    if(win && !win.closed) win.close();
     toast('Fehler beim Vorbereiten: '+e.message);
   }
 }
