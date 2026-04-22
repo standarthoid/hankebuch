@@ -138,10 +138,11 @@
 
   .list{display:flex;flex-direction:column}
   .tx-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+  .tx-item.select-mode{grid-template-columns:auto auto 1fr auto}
   .tx-item:hover{background:var(--bg-sunk)}
   .tx-item.selected{background:rgba(47,83,68,0.08)}
   .tx-item.selected:hover{background:rgba(47,83,68,0.14)}
-  .tx-check{display:flex;align-items:center;padding:0 4px 0 0;cursor:pointer}
+  .tx-check{display:flex;align-items:center}
   .tx-check input[type="checkbox"]{width:18px;height:18px;cursor:pointer;margin:0}
   .tx-item:last-child{border-bottom:none}
   .tx-dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
@@ -911,9 +912,6 @@ function renderTransactionList(type){
   const totalNet=sumNet(f);const totalGross=sumGross(f);
   const cats=type==='income'?INCOME_CATEGORIES:EXPENSE_CATEGORIES;
   const lbl=type==='income'?'Einnahmen':'Ausgaben';
-  const visibleIds=f.map(t=>t.id);
-  const selectedVisible=visibleIds.filter(id=>state.selectedIds.has(id)).length;
-  const allVisibleSelected=visibleIds.length>0 && selectedVisible===visibleIds.length;
   return `
     <div class="row" style="margin-bottom:16px">
       <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>${lbl}</b> ${state.year}</h1>
@@ -935,11 +933,8 @@ function renderTransactionList(type){
       <input type="text" class="search" id="search-input" placeholder="Suchen…" value="${escapeAttr(state.search)}">
     </div>
     ${state.selectMode?`
-      <div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-2, #efeadd)">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
-          <input type="checkbox" data-action="select-all-visible" ${allVisibleSelected?'checked':''}>
-          Sichtbare auswählen
-        </label>
+      <div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-sunk)">
+        <button class="btn btn-sm" data-action="select-all">Alle auswählen${f.length?` (${f.length})`:''}</button>
         <div style="flex:1;font-size:13px;color:var(--ink-muted)">${state.selectedIds.size} ausgewählt</div>
         <button class="btn btn-sm" data-action="clear-selection" ${state.selectedIds.size===0?'disabled':''}>Auswahl aufheben</button>
         <button class="btn btn-sm" style="background:var(--terra);color:#fff;border-color:var(--terra)" data-action="bulk-delete" ${state.selectedIds.size===0?'disabled':''}>${ICON.trash} ${state.selectedIds.size} löschen</button>
@@ -956,9 +951,8 @@ function renderTransactionList(type){
 function renderTxItem(t){
   const has=(t.receiptIds||[]).length>0;
   const isSelected=state.selectedIds.has(t.id);
-  const cb=state.selectMode?`<label class="tx-check" onclick="event.stopPropagation()"><input type="checkbox" data-select-tx="${t.id}" ${isSelected?'checked':''}></label>`:'';
-  const clickAttr=state.selectMode?`data-select-tx-row="${t.id}"`:`data-edit="${t.id}"`;
-  return `<div class="tx-item ${t.type} ${isSelected?'selected':''}" ${clickAttr}>
+  const cb=state.selectMode?`<div class="tx-check"><input type="checkbox" data-select-tx="${t.id}" ${isSelected?'checked':''}></div>`:'';
+  return `<div class="tx-item ${t.type} ${state.selectMode?'select-mode':''} ${isSelected?'selected':''}" data-edit="${t.id}">
     ${cb}
     <div class="tx-dot"></div>
     <div class="tx-main">
@@ -2253,18 +2247,11 @@ function attachEvents(){
   const bs=document.getElementById('btn-settings');if(bs)bs.addEventListener('click',()=>openSettings());
   document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',handleAction));
   document.querySelectorAll('[data-edit]').forEach(el=>el.addEventListener('click',()=>openTxModal(null,el.dataset.edit)));
-  // Auswahlmodus: Checkbox in Zeile
+  // Auswahlmodus: Checkbox togglet Auswahl, ohne das Edit-Modal zu öffnen
   document.querySelectorAll('[data-select-tx]').forEach(el=>el.addEventListener('click',e=>{
     e.stopPropagation();
     const id=el.dataset.selectTx;
     if(el.checked)state.selectedIds.add(id);else state.selectedIds.delete(id);
-    render();
-  }));
-  // Auswahlmodus: ganze Zeile klickbar
-  document.querySelectorAll('[data-select-tx-row]').forEach(el=>el.addEventListener('click',e=>{
-    if(e.target.closest('input[type="checkbox"]'))return;
-    const id=el.dataset.selectTxRow;
-    if(state.selectedIds.has(id))state.selectedIds.delete(id);else state.selectedIds.add(id);
     render();
   }));
   document.querySelectorAll('[data-edit-invoice]').forEach(el=>el.addEventListener('click',()=>openInvoiceModal(el.dataset.editInvoice)));
@@ -2286,7 +2273,7 @@ function handleAction(e){
     case 'toggle-select':state.selectMode=!state.selectMode;if(!state.selectMode)state.selectedIds=new Set();render();break;
     case 'bulk-delete':bulkDeleteSelected();break;
     case 'clear-selection':state.selectedIds=new Set();render();break;
-    case 'select-all-visible':toggleSelectAllVisible(e.currentTarget.checked);break;
+    case 'select-all':selectAllVisible();break;
     case 'save-settings':saveSettingsFromModal();break;
     case 'save-invoice':saveInvoice().then(inv=>{if(inv){closeModal();render();}});break;
     case 'save-and-pdf':saveInvoice().then(inv=>{if(inv){printInvoice(inv);closeModal();render();}});break;
@@ -2501,8 +2488,8 @@ async function deleteTx(id){if(!id)return;if(!confirm('Buchung wirklich löschen
   state.transactions=state.transactions.filter(t=>t.id!==id);await saveTransactions();toast('Gelöscht');closeModal();render();
 }
 
-function toggleSelectAllVisible(checked){
-  // Finde alle sichtbaren Einträge (wie in renderTransactionList gefiltert)
+function selectAllVisible(){
+  // Wählt alle sichtbaren Einträge aus (mit aktuellen Filtern)
   const type=state.view;
   if(type!=='income'&&type!=='expense')return;
   const all=state.transactions.filter(t=>t.type===type&&t.date.startsWith(String(state.year)));
@@ -2513,8 +2500,7 @@ function toggleSelectAllVisible(checked){
   }
   if(state.categoryFilter!=='all')f=f.filter(t=>t.category===state.categoryFilter);
   if(state.search.trim()){const q=state.search.toLowerCase();f=f.filter(t=>(t.description||'').toLowerCase().includes(q)||(t.contact||'').toLowerCase().includes(q)||(t.invoiceNumber||'').toLowerCase().includes(q));}
-  if(checked){f.forEach(t=>state.selectedIds.add(t.id));}
-  else{f.forEach(t=>state.selectedIds.delete(t.id));}
+  f.forEach(t=>state.selectedIds.add(t.id));
   render();
 }
 
