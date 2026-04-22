@@ -2032,11 +2032,58 @@ async function importWooCommerce(file){
     }
     if(!Array.isArray(data.orders)){toast('Keine Bestellungen gefunden');return;}
     const shopUrl=data.shop_url||'unknown';
-    const existingKeys=new Set(state.invoices.filter(i=>i.wooOrderId).map(i=>`${i.wooShopUrl}::${i.wooOrderId}`));
-    let imported=0,skipped=0,asInvoiceCount=0,pdfsAttached=0;
+    // Vorhandene Bestellungen als Map: key → Index in state.invoices
+    const existingMap=new Map();
+    state.invoices.forEach((i,idx)=>{
+      if(i.wooOrderId) existingMap.set(`${i.wooShopUrl}::${i.wooOrderId}`, idx);
+    });
+    let imported=0,skipped=0,updated=0,asInvoiceCount=0,pdfsAttached=0;
     for(const order of data.orders){
       const key=`${shopUrl}::${order.order_id}`;
-      if(existingKeys.has(key)){skipped++;continue;}
+      const newNumber=order.pdf_invoice?.invoice_number || `WC-${order.order_number||order.order_id}`;
+
+      // --- FALL: Vorhanden? Dann prüfen ob Update nötig ---
+      if(existingMap.has(key)){
+        const invIdx=existingMap.get(key);
+        const existingInv=state.invoices[invIdx];
+        let changed=false;
+
+        // Rechnungsnummer hat sich verbessert (echte Germanized-Nr statt WC-Fallback)?
+        const hadFallback=existingInv.number && existingInv.number.startsWith('WC-');
+        const newIsReal=!newNumber.startsWith('WC-');
+        if(hadFallback && newIsReal && newNumber!==existingInv.number){
+          existingInv.number=newNumber;
+          // Auch in verknüpfter Transaktion updaten
+          if(existingInv.txId){
+            const tx=state.transactions.find(t=>t.id===existingInv.txId);
+            if(tx){
+              tx.invoiceNumber=newNumber;
+              tx.description=`${newNumber} · ${existingInv.customer?.name||''}`.trim();
+            }
+          }
+          changed=true;
+        }
+
+        // PDF nachliefern, falls jetzt vorhanden und vorher nicht
+        if(order.pdf_invoice?.data && existingInv.txId){
+          const tx=state.transactions.find(t=>t.id===existingInv.txId);
+          if(tx && (!tx.receiptIds || tx.receiptIds.length===0)){
+            try{
+              const receiptId=await saveReceiptFromData(tx.id, order.pdf_invoice);
+              tx.receiptIds=tx.receiptIds||[];
+              tx.receiptIds.push(receiptId);
+              pdfsAttached++;
+              changed=true;
+            }catch(e){console.warn('PDF-Beleg konnte nicht gespeichert werden:',e);}
+          }
+        }
+
+        if(changed) updated++;
+        else skipped++;
+        continue;
+      }
+
+      // --- FALL: Neu anlegen ---
       const isPaid=order.paid_date||['completed','processing'].includes(order.status);
       const invoiceDate=order.paid_date||order.order_date||todayISO();
       const items=(order.items||[]).map(it=>({
@@ -2049,7 +2096,7 @@ async function importWooCommerce(file){
       if(!items.length)continue;
       const inv={
         id:uid('inv'),
-        number:order.pdf_invoice?.invoice_number || `WC-${order.order_number||order.order_id}`,
+        number:newNumber,
         status:isPaid?'paid':'sent',
         invoiceDate:invoiceDate,
         serviceDate:order.order_date||invoiceDate,
@@ -2104,7 +2151,7 @@ async function importWooCommerce(file){
     }
     await saveTransactions();
     await saveInvoices();
-    let msg=`${imported} importiert · ${skipped} bereits vorhanden`;
+    let msg=`${imported} neu · ${updated} aktualisiert · ${skipped} unverändert`;
     if(asInvoiceCount)msg+=` · ${asInvoiceCount} als Einnahme gebucht`;
     if(pdfsAttached)msg+=` · ${pdfsAttached} PDFs angehängt`;
     toast(msg);
