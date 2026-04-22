@@ -434,7 +434,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const INCOME_CATEGORIES = ['Dienstleistungen','Warenverkauf','Lizenz-/Nutzungsrechte','Provisionen','Mieteinnahmen','Zinserträge','Sonstige Einnahmen'];
-const EXPENSE_CATEGORIES = ['Wareneinkauf','Fremdleistungen','Personalkosten','Raumkosten (Miete)','Nebenkosten (Strom, Heizung)','Bürobedarf','Porto & Versand','Telefon & Internet','Reisekosten','Kfz-Kosten','Bewirtung','Werbung & Marketing','Versicherungen','Fortbildung & Literatur','Beratungskosten (Steuerberater, Anwalt)','Software & IT-Abos','Geringwertige Wirtschaftsgüter','Abschreibungen (AfA)','Bankgebühren','Gewerbesteuer / sonstige Steuern','Sonstige Ausgaben'];
+const EXPENSE_CATEGORIES = ['Wareneinkauf','Fremdleistungen','Personalkosten','Raumkosten (Miete)','Nebenkosten (Strom, Heizung)','Bürobedarf','Porto & Versand','Telefon & Internet','Reisekosten','Kfz-Kosten','Bewirtung','Werbung & Marketing','Versicherungen','Fortbildung & Literatur','Beratungskosten (Steuerberater, Anwalt)','Software & IT-Abos','Geringwertige Wirtschaftsgüter','Abschreibungen (AfA)','Bankgebühren','Zahlungsanbieter-Gebühren (Stripe, PayPal)','Gewerbesteuer / sonstige Steuern','Sonstige Ausgaben'];
 const VAT_RATES = [0, 7, 19];
 
 const VIEWS = {
@@ -2037,7 +2037,12 @@ async function importWooCommerce(file){
     state.invoices.forEach((i,idx)=>{
       if(i.wooOrderId) existingMap.set(`${i.wooShopUrl}::${i.wooOrderId}`, idx);
     });
-    let imported=0,skipped=0,updated=0,asInvoiceCount=0,pdfsAttached=0;
+    // Vorhandene Gebühren-Buchungen: key → transaction
+    const existingFees=new Map();
+    state.transactions.forEach(t=>{
+      if(t.wooFeeOrderId) existingFees.set(`${t.wooShopUrl}::${t.wooFeeOrderId}`, t);
+    });
+    let imported=0,skipped=0,updated=0,asInvoiceCount=0,pdfsAttached=0,feesAdded=0;
     for(const order of data.orders){
       const key=`${shopUrl}::${order.order_id}`;
       const newNumber=order.pdf_invoice?.invoice_number || `WC-${order.order_number||order.order_id}`;
@@ -2053,7 +2058,6 @@ async function importWooCommerce(file){
         const newIsReal=!newNumber.startsWith('WC-');
         if(hadFallback && newIsReal && newNumber!==existingInv.number){
           existingInv.number=newNumber;
-          // Auch in verknüpfter Transaktion updaten
           if(existingInv.txId){
             const tx=state.transactions.find(t=>t.id===existingInv.txId);
             if(tx){
@@ -2076,6 +2080,15 @@ async function importWooCommerce(file){
               changed=true;
             }catch(e){console.warn('PDF-Beleg konnte nicht gespeichert werden:',e);}
           }
+        }
+
+        // Zahlungsgebühr nachliefern, falls noch nicht gebucht
+        if(order.payment_fee && order.payment_fee.amount>0 && !existingFees.has(key)){
+          const feeTx=buildFeeTransaction(order,existingInv,shopUrl,data.shop);
+          state.transactions.push(feeTx);
+          existingFees.set(key,feeTx);
+          feesAdded++;
+          changed=true;
         }
 
         if(changed) updated++;
@@ -2127,14 +2140,13 @@ async function importWooCommerce(file){
           description:`${inv.number} · ${order.customer?.name||''}`.trim(),
           contact:order.customer?.name||'',
           invoiceNumber:inv.number,
-          category:INCOME_CATEGORIES[1], // Warenverkauf
+          category:INCOME_CATEGORIES[1],
           gross:inv.totalGross,net:inv.totalNet,vat:inv.totalVat,
           vatRate:inv.vatBreakdown[0]?.rate||0,
           notes:`Auto-Import aus WooCommerce (${data.shop||shopUrl})`,
           createdAt:new Date().toISOString(),
           receiptIds:[],
         };
-        // PDF-Rechnung als Beleg anhängen
         if(order.pdf_invoice&&order.pdf_invoice.data){
           try{
             const receiptId=await saveReceiptFromData(txId,order.pdf_invoice);
@@ -2144,6 +2156,14 @@ async function importWooCommerce(file){
         }
         state.transactions.push(tx);
         inv.txId=txId;
+
+        // Zahlungsgebühr als separate Ausgabe anlegen
+        if(order.payment_fee && order.payment_fee.amount>0){
+          const feeTx=buildFeeTransaction(order,inv,shopUrl,data.shop);
+          state.transactions.push(feeTx);
+          existingFees.set(key,feeTx);
+          feesAdded++;
+        }
       }
       state.invoices.push(inv);
       imported++;
@@ -2154,9 +2174,33 @@ async function importWooCommerce(file){
     let msg=`${imported} neu · ${updated} aktualisiert · ${skipped} unverändert`;
     if(asInvoiceCount)msg+=` · ${asInvoiceCount} als Einnahme gebucht`;
     if(pdfsAttached)msg+=` · ${pdfsAttached} PDFs angehängt`;
+    if(feesAdded)msg+=` · ${feesAdded} Gebühren gebucht`;
     toast(msg);
     closeModal();render();
   }catch(e){toast('Import fehlgeschlagen: '+e.message);}
+}
+
+// Baut eine Transaktion für eine Zahlungsanbieter-Gebühr (Stripe/PayPal).
+// Gebühren sind USt-frei nach §4 Nr. 8 UStG (Finanzdienstleistungen).
+function buildFeeTransaction(order,inv,shopUrl,shopName){
+  const pf=order.payment_fee;
+  const provider=pf.provider||'Zahlungsanbieter';
+  const feeAmount=pf.amount||0;
+  return {
+    id:uid(),
+    type:'expense',
+    date:order.paid_date||order.order_date||todayISO(),
+    description:`${provider}-Gebühr · ${inv.number||('WC-'+order.order_id)}`,
+    contact:provider,
+    invoiceNumber:'',
+    category:'Zahlungsanbieter-Gebühren (Stripe, PayPal)',
+    gross:feeAmount, net:feeAmount, vat:0, vatRate:0,
+    notes:`Zahlungs-Gebühr für WooCommerce-Bestellung #${order.order_number||order.order_id}${pf.net?`. Netto-Auszahlung: ${pf.net} ${pf.currency||'EUR'}`:''}`,
+    createdAt:new Date().toISOString(),
+    receiptIds:[],
+    wooFeeOrderId:order.order_id,
+    wooShopUrl:shopUrl,
+  };
 }
 
 // Speichert einen Beleg aus base64-Daten (z.B. eine PDF-Rechnung aus WooCommerce-Import)
