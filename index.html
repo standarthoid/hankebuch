@@ -2111,26 +2111,47 @@ function nextCreditNoteNumber(){
 function findVendorEarnings(vendorId, from, to){
   const v=state.vendors.find(x=>x.id===vendorId);
   if(!v)return [];
+  const vendorCommissionPct=typeof v.commissionPct==='number'?v.commissionPct:0;
   const lines=[];
   state.transactions.forEach(t=>{
     if(t.type!=='income')return;
     if(t.date<from||t.date>to)return;
-    // Zuordnung per Product-Vendor-ID
     if(!t.wooVendors||!Array.isArray(t.wooVendors))return;
     t.wooVendors.forEach(wv=>{
-      if(wv.vendor_id===v.productVendorId && wv.vendor_share>0){
-        lines.push({
-          txId:t.id,
-          date:t.date,
-          orderNumber:t.invoiceNumber||t.wooOrderNumber||'',
-          description:(t.description||'').replace(/^[^·]*·\s*/,''), // Kundennamen hinter erstem "·"
-          grossSale:wv.line_total_net+wv.line_total_tax,
-          netSale:wv.line_total_net,
-          commission:wv.commission,
-          vendorShare:wv.vendor_share,
-          commissionPct:wv.items?.[0]?.commission_pct||v.commissionPct||0,
-        });
+      if(wv.vendor_id!==v.productVendorId)return;
+      // Plattform-Provision ermitteln:
+      // 1. Wenn Plugin einen Wert > 0 liefert → verwenden
+      // 2. Sonst Hankebuch-Stammdaten-Wert anwenden
+      const pluginPct=wv.items?.[0]?.commission_pct||0;
+      const pluginCommission=wv.commission||0;
+      let effectivePct, effectiveCommission, effectiveShare;
+      if(pluginPct>0||pluginCommission>0){
+        effectivePct=pluginPct;
+        effectiveCommission=pluginCommission;
+        effectiveShare=wv.vendor_share;
+      } else if(vendorCommissionPct>0){
+        // Fallback: Satz aus Anbieter-Stammdaten in Hankebuch
+        effectivePct=vendorCommissionPct;
+        effectiveCommission=round2(wv.line_total_net*vendorCommissionPct/100);
+        effectiveShare=round2(wv.line_total_net-effectiveCommission);
+      } else {
+        // Keine Provision definiert → 0 % Plattform-Anteil, Anbieter bekommt alles
+        effectivePct=0;
+        effectiveCommission=0;
+        effectiveShare=wv.line_total_net;
       }
+      if(effectiveShare<=0)return;
+      lines.push({
+        txId:t.id,
+        date:t.date,
+        orderNumber:t.invoiceNumber||t.wooOrderNumber||'',
+        description:(t.description||'').replace(/^[^·]*·\s*/,''),
+        grossSale:wv.line_total_net+wv.line_total_tax,
+        netSale:wv.line_total_net,
+        commission:effectiveCommission,
+        vendorShare:effectiveShare,
+        commissionPct:effectivePct,
+      });
     });
   });
   lines.sort((a,b)=>a.date.localeCompare(b.date));
