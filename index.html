@@ -41,13 +41,18 @@
   .content{flex:1;padding:18px 16px 110px;max-width:920px;width:100%;margin:0 auto}
   @media(min-width:760px){.app-header{padding:20px 36px 16px}.content{padding:28px 36px 50px}}
 
-  .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(253,251,246,0.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(8,1fr);padding:6px 4px calc(8px + env(safe-area-inset-bottom));z-index:8}
-  .bottom-nav button{padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-muted);font-size:10px;letter-spacing:0.02em;font-weight:600;border-radius:10px}
+  .bottom-nav-wrap{position:fixed;bottom:0;left:0;right:0;z-index:8}
+  .bottom-nav-wrap::after{content:'';position:absolute;top:0;bottom:0;right:0;width:30px;pointer-events:none;background:linear-gradient(to right,rgba(253,251,246,0),rgba(253,251,246,0.95));z-index:9}
+  .bottom-nav{background:rgba(253,251,246,0.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding:6px 4px calc(8px + env(safe-area-inset-bottom));scrollbar-width:none;touch-action:pan-x;overscroll-behavior:contain}
+  .bottom-nav::-webkit-scrollbar{display:none}
+  .bottom-nav button{flex:0 0 auto;min-width:58px;padding:6px 8px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--ink-muted);font-size:10px;letter-spacing:0.02em;font-weight:600;border-radius:10px;white-space:nowrap}
   .bottom-nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentColor}
-  .bottom-nav button.active{color:var(--green)}
+  .bottom-nav button.active{color:var(--green);background:var(--green-soft)}
   @media(min-width:760px){
-    .bottom-nav{position:static;border-top:none;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;display:flex;gap:3px;padding:0;justify-content:flex-end;flex-wrap:wrap}
-    .bottom-nav button{flex-direction:row;padding:7px 13px;font-size:13px;font-weight:500;border-radius:999px}
+    .bottom-nav-wrap{position:static}
+    .bottom-nav-wrap::after{display:none}
+    .bottom-nav{position:static;border-top:none;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;display:flex;gap:3px;padding:0;justify-content:flex-end;flex-wrap:wrap;overflow:visible}
+    .bottom-nav button{flex:0 0 auto;min-width:0;flex-direction:row;padding:7px 13px;font-size:13px;font-weight:500;border-radius:999px}
     .bottom-nav button svg{width:15px;height:15px}
     .bottom-nav button.active{background:var(--green-soft);color:var(--green)}
   }
@@ -852,7 +857,7 @@ function renderHeader(){
   </header>`;
 }
 function renderBottomNav(){
-  return `<nav class="bottom-nav">${Object.entries(VIEWS).map(([k,v])=>`<button data-view="${k}" class="${state.view===k?'active':''}">${ICON[v.icon]}<span>${v.label}</span></button>`).join('')}</nav>`;
+  return `<div class="bottom-nav-wrap"><nav class="bottom-nav">${Object.entries(VIEWS).map(([k,v])=>`<button data-view="${k}" class="${state.view===k?'active':''}">${ICON[v.icon]}<span>${v.label}</span></button>`).join('')}</nav></div>`;
 }
 function renderView(){
   switch(state.view){
@@ -2189,7 +2194,7 @@ function openCreditNoteGeneratorModal(){
         <input type="date" id="cn-to" value="${defaultTo}">
       </div>
     </div>
-    <div class="field-row">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
       <button class="btn btn-sm" data-cn-quick="this-month">Aktueller Monat</button>
       <button class="btn btn-sm" data-cn-quick="last-month">Letzter Monat</button>
       <button class="btn btn-sm" data-cn-quick="this-quarter">Aktuelles Quartal</button>
@@ -3217,6 +3222,9 @@ function download(filename,content,mime){const blob=new Blob([content],{type:mim
 
 function attachEvents(){
   document.querySelectorAll('.bottom-nav button').forEach(btn=>btn.addEventListener('click',()=>{state.view=btn.dataset.view;state.monthFilter='all';state.categoryFilter='all';state.search='';state.selectMode=false;state.selectedIds=new Set();render();}));
+  // Aktiven Tab auf Handy in den sichtbaren Bereich scrollen
+  const activeBtn=document.querySelector('.bottom-nav button.active');
+  if(activeBtn && activeBtn.scrollIntoView) activeBtn.scrollIntoView({block:'nearest',inline:'center',behavior:'instant'});
   const ys=document.getElementById('year-select');if(ys)ys.addEventListener('change',e=>{state.year=parseInt(e.target.value);render();});
   const bs=document.getElementById('btn-settings');if(bs)bs.addEventListener('click',()=>openSettings());
   document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',handleAction));
