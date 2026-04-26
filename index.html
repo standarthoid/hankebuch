@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <title>Hankebuch — Buchhaltung & Rechnungen</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1794,6 +1795,8 @@ function renderTabData(){
     <button class="btn btn-block" data-action="export-csv">${ICON.download} Buchungsjournal (CSV)</button>
     <button class="btn btn-block" data-action="export-euer">${ICON.download} EÜR-Auswertung (CSV)</button>
     ${!state.settings.kleinunternehmer?`<button class="btn btn-block" data-action="export-vat">${ICON.download} USt-Voranmeldung (CSV)</button>`:''}
+    <div class="info-box" style="margin-top:8px"><b>Finanzamt-Paket ${state.year}</b>: Komplettes ZIP mit Standard-CSV, DATEV-CSV (SKR03) und allen Belegen. Für Übergabe an Steuerberater oder Finanzamt.</div>
+    <button class="btn btn-block btn-primary" data-action="export-finanzamt">${ICON.download} Finanzamt-Paket erstellen (ZIP)</button>
     <div class="divider">WooCommerce-Import</div>
     <div class="info-box"><b>WooCommerce-Bestellungen importieren</b>: JSON-Datei aus dem WordPress-Plugin „Hankebuch — WooCommerce Export". Bereits importierte Bestellungen werden automatisch erkannt.</div>
     <button class="btn btn-block" data-action="import-woo">${ICON.upload} WooCommerce-Bestellungen importieren</button>
@@ -2938,6 +2941,278 @@ function exportICS(){
 function icsEscape(s){return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');}
 
 function exportJSON(){const data={version:4,app:'Hankebuch',exportedAt:new Date().toISOString(),settings:state.settings,transactions:state.transactions,invoices:state.invoices,vendors:state.vendors,creditNotes:state.creditNotes};download(`hankebuch_backup_${todayISO()}.json`,JSON.stringify(data,null,2),'application/json');}
+
+/* ============================================================
+   FINANZAMT-PAKET-EXPORT
+   ZIP mit Standard-CSV + DATEV-CSV + Belegen + Rechnungen + Gutschriften
+   ============================================================ */
+
+// SKR03-Konten-Mapping (vereinfacht, decken die wichtigsten EÜR-Fälle ab)
+// Bei Mischfällen sollte der Steuerberater das Mapping anpassen.
+const SKR03_INCOME_MAP = {
+  'Warenverkauf':'8400',           // Erlöse 19% USt
+  'Dienstleistungen':'8400',
+  'Zinsen / Kapitalerträge':'8100',
+  'Mieteinnahmen':'8120',
+  'Sonstige Einnahmen':'8500',
+  'Privateinlage':'1890',
+};
+const SKR03_EXPENSE_MAP = {
+  'Wareneinkauf':'3400',
+  'Fremdleistungen':'3100',
+  'Anbieter-Auszahlungen (Marketplace)':'3100',
+  'Personalkosten':'4100',
+  'Raumkosten (Miete)':'4210',
+  'Nebenkosten (Strom, Heizung)':'4240',
+  'Bürobedarf':'4930',
+  'Porto & Versand':'4910',
+  'Telefon & Internet':'4920',
+  'Reisekosten':'4660',
+  'Kfz-Kosten':'4530',
+  'Bewirtung':'4650',
+  'Werbung & Marketing':'4980',
+  'Versicherungen':'4360',
+  'Fortbildung & Literatur':'4940',
+  'Beratungskosten (Steuerberater, Anwalt)':'4955',
+  'Software & IT-Abos':'4985',
+  'Geringwertige Wirtschaftsgüter':'4855',
+  'Abschreibungen (AfA)':'4830',
+  'Bankgebühren':'4970',
+  'Zahlungsanbieter-Gebühren (Stripe, PayPal)':'4970',
+  'Gewerbesteuer / sonstige Steuern':'4320',
+  'Sonstige Ausgaben':'4900',
+};
+
+// Kollege Bank/Kasse als Gegenkonto (typisch SKR03 1200 = Bank)
+const SKR03_BANK_KONTO = '1200';
+
+// DATEV-Steuerschlüssel (Mehrwertsteuer-Schlüssel SKR03)
+function datevTaxKey(rate, type){
+  // type = income oder expense; Hankebuch Sätze: 19, 7, 0
+  if(type==='income'){
+    if(rate===19)return '3'; // Erlöse 19% USt
+    if(rate===7) return '2'; // Erlöse 7% USt
+    return '0';
+  } else {
+    if(rate===19)return '9'; // Vorsteuer 19%
+    if(rate===7) return '8'; // Vorsteuer 7%
+    return '0';
+  }
+}
+
+function safeFilename(s){return String(s||'').replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,'_').slice(0,80);}
+
+// Erzeugt das DATEV-CSV (vereinfachter Buchungsstapel) für ein Jahr
+function buildDatevCSV(year){
+  const transactions=state.transactions.filter(t=>t.date.startsWith(String(year)));
+  transactions.sort((a,b)=>a.date.localeCompare(b.date));
+  const wj=year;
+  const headerRow1=[
+    '"EXTF"',                    // Format-Kennzeichen
+    '700',                        // Versionsnummer
+    '21',                         // Datenkategorie: 21 = Buchungsstapel
+    '"Buchungsstapel"',           // Formatname
+    '12',                         // Formatversion
+    new Date().toISOString().replace(/\D/g,'').slice(0,14)+'000',  // Erzeugt am
+    '',                           // Importiert
+    '"hb"',                       // Herkunft
+    '"Hankebuch"',                // Exportiert von
+    '"Hankebuch"',                // Importiert von
+    '',                           // Beraternummer
+    '',                           // Mandantennummer
+    `${wj}0101`,                  // WJ-Beginn
+    '4',                          // Sachkontenlänge
+    `${wj}0101`,                  // Datum von
+    `${wj}1231`,                  // Datum bis
+    `"Hankebuch ${wj}"`,          // Bezeichnung
+    `"${(state.settings.ownerName||state.settings.businessName||'').replace(/"/g,'')}"`,  // Diktatkürzel
+    '1',                          // Buchungstyp: 1 = Finanzbuchführung
+    '0',                          // Rechnungslegungszweck
+    '0',                          // Festschreibung: 0 = keine
+    '"EUR"',                      // WKZ
+    '','','','','',''             // Reserve-Felder
+  ].join(';');
+
+  // Spaltenüberschriften (Hauptversion 700 / Format 12)
+  const headerRow2=[
+    'Umsatz (ohne Soll/Haben-Kz)','Soll/Haben-Kennzeichen','WKZ Umsatz',
+    'Kurs','Basis-Umsatz','WKZ Basis-Umsatz',
+    'Konto','Gegenkonto (ohne BU-Schlüssel)','BU-Schlüssel',
+    'Belegdatum','Belegfeld 1','Belegfeld 2',
+    'Skonto','Buchungstext'
+  ].join(';');
+
+  const rows=transactions.map(t=>{
+    const isIncome=t.type==='income';
+    const skrKonto=isIncome
+      ? (SKR03_INCOME_MAP[t.category]||'8400')
+      : (SKR03_EXPENSE_MAP[t.category]||'4900');
+    // Bei Einnahmen: Gegenkonto = Bank, Konto = Erlöskonto, S/H = H (Haben)
+    // Bei Ausgaben: Gegenkonto = Bank, Konto = Aufwandskonto, S/H = S (Soll)
+    // Vereinfachung für EÜR: Wir buchen brutto gegen Bank.
+    const umsatz=Math.abs(t.gross||0).toFixed(2).replace('.', ',');
+    const sh=isIncome?'H':'S';
+    const konto=skrKonto;
+    const gegenkonto=SKR03_BANK_KONTO;
+    const buSchluessel=datevTaxKey(t.vatRate||0, t.type);
+    const dt=(t.date||'').slice(5).replace('-','')+''; // ddmm
+    const dateForDatev=dt.slice(2,4)+dt.slice(0,2);     // tt+mm = ttmm
+    const beleg1=(t.invoiceNumber||t.id||'').toString().slice(0,36);
+    const text=((t.description||'')+(t.contact?' · '+t.contact:'')).replace(/[\r\n]/g,' ').slice(0,60);
+    return [
+      umsatz,
+      sh,
+      'EUR',
+      '','', '',
+      konto,
+      gegenkonto,
+      buSchluessel,
+      dateForDatev,
+      `"${beleg1.replace(/"/g,"'")}"`,
+      '',
+      '',
+      `"${text.replace(/"/g,"'")}"`,
+    ].join(';');
+  });
+  return [headerRow1, headerRow2, ...rows].join('\r\n');
+}
+
+async function exportFinanzamtPaket(year){
+  if(typeof JSZip==='undefined'){
+    toast('JSZip nicht geladen – bitte mit Internet-Verbindung erneut versuchen');
+    return;
+  }
+  toast('Erstelle Finanzamt-Paket…');
+  try{
+    const zip=new JSZip();
+    const yearTx=state.transactions.filter(t=>t.date.startsWith(String(year))).sort((a,b)=>a.date.localeCompare(b.date));
+    const yearInv=state.invoices.filter(i=>(i.date||'').startsWith(String(year))).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const yearCN=state.creditNotes.filter(c=>(c.issueDate||'').startsWith(String(year))).sort((a,b)=>(a.issueDate||'').localeCompare(b.issueDate||''));
+
+    // 1) README
+    const README=`HANKEBUCH FINANZAMT-PAKET – Wirtschaftsjahr ${year}
+=====================================================
+
+Erstellt am: ${new Date().toLocaleString('de-DE')}
+Mandant:     ${state.settings.businessName||state.settings.ownerName||''}
+Steuer-Nr:   ${state.settings.taxNumber||'–'}
+USt-IdNr:    ${state.settings.vatId||'–'}
+Hankebuch-Version: 4 (Marketplace + Gutschriften)
+
+DATEIEN UND ORDNER:
+-------------------
+journal_${year}.csv               Lesbares Buchungsjournal mit allen Spalten (UTF-8 mit BOM, Semikolon-getrennt).
+EXTF_Buchungsstapel_${year}.csv   DATEV-konformes CSV (Buchungsstapel, Format 700/12) für DATEV-Import.
+INDEX.csv                          Übersicht: welche Beleg-Datei zu welcher Buchung gehört.
+belege/                            Alle in Hankebuch hinterlegten Belege als Original-Dateien.
+rechnungen/                        Alle ausgegangenen Rechnungen (HTML zum Drucken/Konvertieren).
+gutschriften/                      Alle erstellten Gutschriften (HTML zum Drucken/Konvertieren).
+
+WICHTIGE HINWEISE:
+------------------
+• Hankebuch ist KEINE GoBD-zertifizierte Buchhaltungssoftware. Bei einer formellen
+  Betriebsprüfung können zusätzliche Anforderungen gestellt werden.
+• Das DATEV-CSV nutzt SKR03 als Standard-Kontenrahmen. Falls dein Steuerberater einen
+  anderen Kontenrahmen verwendet (z.B. SKR04), bitte vor Import abklären.
+• Die Konten-Zuordnung ist eine pragmatische Empfehlung und ersetzt keine fachliche
+  Prüfung durch einen Steuerberater.
+• EU-Geschäfte (OSS, Reverse Charge) sind nicht abgebildet und müssen ggf.
+  manuell ergänzt werden.
+
+KENNZAHLEN ${year}:
+-------------------
+${(()=>{
+  const inc=yearTx.filter(t=>t.type==='income').reduce((s,t)=>s+(t.gross||0),0);
+  const exp=yearTx.filter(t=>t.type==='expense').reduce((s,t)=>s+(t.gross||0),0);
+  return `Einnahmen:    ${fmtEUR(inc)}
+Ausgaben:     ${fmtEUR(exp)}
+Gewinn:       ${fmtEUR(inc-exp)}
+
+Buchungen:    ${yearTx.length}
+Rechnungen:   ${yearInv.length}
+Gutschriften: ${yearCN.length}`;
+})()}
+`;
+    zip.file('README.txt', README);
+
+    // 2) Standard-CSV (gleich wie exportCSV, nur in ZIP)
+    const stdHeader=['Datum','Typ','Kategorie','Beschreibung','Geschäftspartner','Beleg-Nr','Netto','USt-Satz','USt-Betrag','Brutto','Belege','Notizen'];
+    const stdRows=yearTx.map(t=>[t.date,t.type==='income'?'Einnahme':'Ausgabe',t.category,(t.description||''),(t.contact||''),(t.invoiceNumber||''),toCsvNum(t.net),(t.vatRate||0)+'%',toCsvNum(t.vat),toCsvNum(t.gross),(t.receiptIds||[]).length+' Beleg(e)',(t.notes||'').replace(/\n/g,' ')]);
+    const stdCsv=[stdHeader,...stdRows].map(r=>r.map(csvCell).join(';')).join('\r\n');
+    zip.file(`journal_${year}.csv`, '\uFEFF'+stdCsv);
+
+    // 3) DATEV-CSV
+    const datevCsv=buildDatevCSV(year);
+    zip.file(`EXTF_Buchungsstapel_${year}.csv`, datevCsv);
+
+    // 4) Belege sammeln
+    const beleg=zip.folder('belege');
+    const indexRows=[['Buchungs-ID','Datum','Typ','Beleg-Nr','Beschreibung','Brutto','Beleg-Datei']];
+    let belegCount=0;
+    for(const t of yearTx){
+      const baseName=`${t.date}_${safeFilename((t.invoiceNumber||t.id).slice(0,20))}_${safeFilename((t.contact||t.description||'').slice(0,40))}`;
+      if(t.receiptIds && t.receiptIds.length){
+        for(let idx=0;idx<t.receiptIds.length;idx++){
+          const rcptId=t.receiptIds[idx];
+          try{
+            const r=await loadReceipt(rcptId);
+            if(!r||!r.data)continue;
+            // base64 → binary (kann data:URL prefix haben)
+            const b64=r.data.includes(',')?r.data.split(',')[1]:r.data;
+            const ext=(r.filename||'').split('.').pop()||(r.mime?.includes('pdf')?'pdf':r.mime?.includes('jpeg')?'jpg':r.mime?.includes('png')?'png':'bin');
+            const fname=`${baseName}_${idx+1}.${ext}`;
+            beleg.file(fname, b64, {base64:true});
+            indexRows.push([t.id,t.date,t.type==='income'?'Einnahme':'Ausgabe',(t.invoiceNumber||''),(t.description||''),toCsvNum(t.gross),`belege/${fname}`]);
+            belegCount++;
+          }catch(e){console.warn('Beleg konnte nicht gelesen werden:',rcptId,e);}
+        }
+      } else {
+        indexRows.push([t.id,t.date,t.type==='income'?'Einnahme':'Ausgabe',(t.invoiceNumber||''),(t.description||''),toCsvNum(t.gross),'(kein Beleg)']);
+      }
+    }
+    const indexCsv=indexRows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+    zip.file('INDEX.csv', '\uFEFF'+indexCsv);
+
+    // 5) Rechnungen als HTML
+    if(yearInv.length){
+      const rFolder=zip.folder('rechnungen');
+      for(const inv of yearInv){
+        try{
+          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rechnung ${escapeHtml(inv.number)}</title></head><body>${renderInvoicePdfHTML(inv)}</body></html>`;
+          const fname=`${inv.date||'undatiert'}_${safeFilename(inv.number)}_${safeFilename((inv.recipient?.name||'').slice(0,40))}.html`;
+          rFolder.file(fname, html);
+        }catch(e){console.warn('Rechnung konnte nicht erzeugt werden:',inv.number,e);}
+      }
+    }
+
+    // 6) Gutschriften als HTML
+    if(yearCN.length){
+      const gFolder=zip.folder('gutschriften');
+      for(const cn of yearCN){
+        try{
+          const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(cn.number)}</title></head><body>${renderCreditNotePdfHTML(cn)}</body></html>`;
+          const fname=`${cn.issueDate||'undatiert'}_${safeFilename(cn.number)}_${safeFilename((cn.vendorSnapshot?.name||'').slice(0,40))}.html`;
+          gFolder.file(fname, html);
+        }catch(e){console.warn('Gutschrift konnte nicht erzeugt werden:',cn.number,e);}
+      }
+    }
+
+    // ZIP generieren und herunterladen
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`hankebuch_finanzamt_${year}_${todayISO()}.zip`;
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+    toast(`Paket erstellt: ${yearTx.length} Buchungen, ${belegCount} Belege, ${yearInv.length} Rechnungen, ${yearCN.length} Gutschriften`);
+  }catch(e){
+    console.error(e);
+    toast('Fehler beim Export: '+e.message);
+  }
+}
+
+
 async function importWooCommerce(file){
   try{
     const text=await file.text();
@@ -3285,6 +3560,7 @@ function handleAction(e){
     case 'delete-invoice':deleteInvoice();break;
     case 'add-item':addInvoiceItem();break;
     case 'export-csv':exportCSV(state.year);toast('CSV heruntergeladen');break;
+    case 'export-finanzamt':exportFinanzamtPaket(state.year);break;
     case 'export-euer':exportEUER(state.year);toast('EÜR-Export heruntergeladen');break;
     case 'export-vat':exportUstVoranmeldung(state.year);toast('USt-Voranmeldungen heruntergeladen');break;
     case 'export-ics':exportICS();toast('Kalender heruntergeladen');break;
