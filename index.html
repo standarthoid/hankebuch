@@ -981,6 +981,10 @@ function renderTxItem(t){
   const has=(t.receiptIds||[]).length>0;
   const isSelected=state.selectedIds.has(t.id);
   const cb=state.selectMode?`<div class="tx-check"><input type="checkbox" data-select-tx="${t.id}" ${isSelected?'checked':''}></div>`:'';
+  const isMultiVat=Array.isArray(t.vatBreakdown)&&t.vatBreakdown.length>1;
+  const vatLabel=isMultiVat
+    ? `${fmtEUR(t.net)} + gemischt (${t.vatBreakdown.map(b=>b.rate+'%').join(', ')})`
+    : (t.vatRate>0?`${fmtEUR(t.net)} + ${t.vatRate}% USt`:(state.settings.kleinunternehmer?'Kleinunt.':'ohne USt'));
   return `<div class="tx-item ${t.type} ${state.selectMode?'select-mode':''} ${isSelected?'selected':''}" data-edit="${t.id}">
     ${cb}
     <div class="tx-dot"></div>
@@ -988,7 +992,7 @@ function renderTxItem(t){
       <div class="tx-desc">${escapeHtml(t.description||'(Ohne Beschreibung)')}${has?`<span class="paperclip">${ICON.paper}${t.receiptIds.length}</span>`:''}</div>
       <div class="tx-meta"><span>${fmtDate(t.date)}</span><span class="sep">·</span><span class="cat-chip">${escapeHtml(t.category)}</span>${t.contact?`<span class="sep">·</span><span>${escapeHtml(t.contact)}</span>`:''}</div>
     </div>
-    <div class="tx-amount">${fmtEUR(t.gross,{signed:t.type==='income'})}<span class="sub">${t.vatRate>0?`${fmtEUR(t.net)} + ${t.vatRate}% USt`:(state.settings.kleinunternehmer?'Kleinunt.':'ohne USt')}</span></div>
+    <div class="tx-amount">${fmtEUR(t.gross,{signed:t.type==='income'})}<span class="sub">${vatLabel}</span></div>
   </div>`;
 }
 
@@ -1865,19 +1869,37 @@ function exportUstVoranmeldung(year){
   rows.push(['Steuernummer',state.settings.taxNumber||'']);
   rows.push(['USt-IdNr.',state.settings.vatId||'']);
   rows.push([]);
-  rows.push(['Zeitraum','Bemessungsgrundlage 19% (netto)','USt 19%','Bemessungsgrundlage 7% (netto)','USt 7%','Steuerfreie Umsätze (0%)','USt gesamt','Vorsteuer','Zahllast / Erstattung','Abgabefrist']);
+  rows.push(['Zeitraum','Bemessungsgrundlage 19% (netto)','USt 19%','Bemessungsgrundlage 7% (netto)','USt 7%','Steuerfreie Umsätze (0%)','USt gesamt','Vorsteuer 19%','Vorsteuer 7%','Vorsteuer gesamt','Zahllast / Erstattung','Abgabefrist']);
+
+  // Hilfsfunktion: gibt das Breakdown einer Transaktion zurück (immer als Array, auch bei Single-USt)
+  const tBreakdown=t=>{
+    if(Array.isArray(t.vatBreakdown)&&t.vatBreakdown.length){
+      return t.vatBreakdown.map(b=>({rate:b.rate,net:b.net,vat:b.vat}));
+    }
+    return [{rate:t.vatRate||0,net:t.net||0,vat:t.vat||0}];
+  };
+  // Summiert nettos je USt-Satz für eine Liste von Transaktionen
+  const sumByRate=(list,rate)=>{
+    return round2(list.reduce((s,t)=>s+tBreakdown(t).filter(b=>b.rate===rate).reduce((s2,b)=>s2+b.net,0),0));
+  };
+  const sumVatByRate=(list,rate)=>{
+    return round2(list.reduce((s,t)=>s+tBreakdown(t).filter(b=>b.rate===rate).reduce((s2,b)=>s2+b.vat,0),0));
+  };
+
   let totalCollected=0,totalPaid=0;
   periods.forEach(p=>{
     const pTx=yearTx.filter(p.filter);
     const inc=pTx.filter(t=>t.type==='income');
     const exp=pTx.filter(t=>t.type==='expense');
-    const base19=round2(inc.filter(t=>t.vatRate===19).reduce((s,t)=>s+t.net,0));
-    const vat19=round2(inc.filter(t=>t.vatRate===19).reduce((s,t)=>s+t.vat,0));
-    const base7=round2(inc.filter(t=>t.vatRate===7).reduce((s,t)=>s+t.net,0));
-    const vat7=round2(inc.filter(t=>t.vatRate===7).reduce((s,t)=>s+t.vat,0));
-    const base0=round2(inc.filter(t=>t.vatRate===0).reduce((s,t)=>s+t.net,0));
+    const base19=sumByRate(inc,19);
+    const vat19=sumVatByRate(inc,19);
+    const base7=sumByRate(inc,7);
+    const vat7=sumVatByRate(inc,7);
+    const base0=sumByRate(inc,0);
     const collected=round2(vat19+vat7);
-    const paid=round2(exp.reduce((s,t)=>s+(t.vat||0),0));
+    const paid19=sumVatByRate(exp,19);
+    const paid7=sumVatByRate(exp,7);
+    const paid=round2(paid19+paid7);
     const balance=round2(collected-paid);
     totalCollected=round2(totalCollected+collected);
     totalPaid=round2(totalPaid+paid);
@@ -1889,10 +1911,10 @@ function exportUstVoranmeldung(year){
       const q=parseInt(p.key.slice(-1));const dueMonths={1:[4,year],2:[7,year],3:[10,year],4:[1,year+1]};
       due=`10.${String(dueMonths[q][0]).padStart(2,'0')}.${dueMonths[q][1]}`;
     }
-    rows.push([p.label,toCsvNum(base19),toCsvNum(vat19),toCsvNum(base7),toCsvNum(vat7),toCsvNum(base0),toCsvNum(collected),toCsvNum(paid),toCsvNum(balance),due]);
+    rows.push([p.label,toCsvNum(base19),toCsvNum(vat19),toCsvNum(base7),toCsvNum(vat7),toCsvNum(base0),toCsvNum(collected),toCsvNum(paid19),toCsvNum(paid7),toCsvNum(paid),toCsvNum(balance),due]);
   });
   rows.push([]);
-  rows.push(['Jahressumme','','','','','',toCsvNum(totalCollected),toCsvNum(totalPaid),toCsvNum(totalCollected-totalPaid),'']);
+  rows.push(['Jahressumme','','','','','',toCsvNum(totalCollected),'','',toCsvNum(totalPaid),toCsvNum(totalCollected-totalPaid),'']);
   rows.push([]);
   rows.push(['Hinweis: Diese Werte sind als Ausgangsmaterial für die ELSTER-Voranmeldung gedacht.']);
   rows.push(['Sie ersetzen NICHT die Einreichung über ELSTER.']);
@@ -3042,37 +3064,36 @@ function buildDatevCSV(year){
     'Skonto','Buchungstext'
   ].join(';');
 
-  const rows=transactions.map(t=>{
+  const rows=[];
+  transactions.forEach(t=>{
     const isIncome=t.type==='income';
     const skrKonto=isIncome
       ? (SKR03_INCOME_MAP[t.category]||'8400')
       : (SKR03_EXPENSE_MAP[t.category]||'4900');
-    // Bei Einnahmen: Gegenkonto = Bank, Konto = Erlöskonto, S/H = H (Haben)
-    // Bei Ausgaben: Gegenkonto = Bank, Konto = Aufwandskonto, S/H = S (Soll)
-    // Vereinfachung für EÜR: Wir buchen brutto gegen Bank.
-    const umsatz=Math.abs(t.gross||0).toFixed(2).replace('.', ',');
     const sh=isIncome?'H':'S';
     const konto=skrKonto;
     const gegenkonto=SKR03_BANK_KONTO;
-    const buSchluessel=datevTaxKey(t.vatRate||0, t.type);
-    const dt=(t.date||'').slice(5).replace('-','')+''; // ddmm
-    const dateForDatev=dt.slice(2,4)+dt.slice(0,2);     // tt+mm = ttmm
+    const dt=(t.date||'').slice(5).replace('-','')+''; // mmdd → wir wollen ttmm
+    const dateForDatev=dt.slice(2,4)+dt.slice(0,2);
     const beleg1=(t.invoiceNumber||t.id||'').toString().slice(0,36);
     const text=((t.description||'')+(t.contact?' · '+t.contact:'')).replace(/[\r\n]/g,' ').slice(0,60);
-    return [
-      umsatz,
-      sh,
-      'EUR',
-      '','', '',
-      konto,
-      gegenkonto,
-      buSchluessel,
-      dateForDatev,
-      `"${beleg1.replace(/"/g,"'")}"`,
-      '',
-      '',
-      `"${text.replace(/"/g,"'")}"`,
-    ].join(';');
+    // Multi-USt: pro Position eine separate Zeile, sonst eine Zeile
+    const positions=Array.isArray(t.vatBreakdown)&&t.vatBreakdown.length
+      ? t.vatBreakdown.map(b=>({rate:b.rate,gross:round2(b.net+b.vat)}))
+      : [{rate:t.vatRate||0,gross:Math.abs(t.gross||0)}];
+    positions.forEach((pos,idx)=>{
+      const umsatz=pos.gross.toFixed(2).replace('.', ',');
+      const buSchluessel=datevTaxKey(pos.rate, t.type);
+      const positionText=positions.length>1?`${text} (${pos.rate}%)`:text;
+      rows.push([
+        umsatz, sh, 'EUR', '','', '',
+        konto, gegenkonto, buSchluessel,
+        dateForDatev,
+        `"${beleg1.replace(/"/g,"'")}"`,
+        '', '',
+        `"${positionText.replace(/"/g,"'")}"`,
+      ].join(';'));
+    });
   });
   return [headerRow1, headerRow2, ...rows].join('\r\n');
 }
@@ -3615,7 +3636,7 @@ function closeViewer(){document.getElementById('viewer-root').innerHTML='';}
 
 function openTxModal(type,editId=null){
   let existing=null;if(editId)existing=state.transactions.find(t=>t.id===editId);
-  state.pendingReceipts=[];state._removedReceipts=[];
+  state.pendingReceipts=[];state._removedReceipts=[];state._vatRows=null;
   const useType=existing?.type||type;
   document.getElementById('modal-root').innerHTML=renderTxModal(useType,existing);
   bindModal();
@@ -3634,6 +3655,7 @@ function renderTxModal(type,existing=null){
   const categories=t.type==='income'?INCOME_CATEGORIES:EXPENSE_CATEGORIES;
   const attached=(t.receiptIds||[]).map(id=>({id,loading:true}));
   const pending=state.pendingReceipts;
+  const isMulti=Array.isArray(t.vatBreakdown)&&t.vatBreakdown.length>0;
   return `<div class="modal-overlay" data-close-modal><div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head"><h2>${isEdit?'Buchung bearbeiten':'Neue Buchung'}</h2><button class="modal-close" data-close-modal>${ICON.close}</button></div>
     <div class="type-switch">
@@ -3646,10 +3668,36 @@ function renderTxModal(type,existing=null){
         <div class="field"><label>Datum</label><input type="date" id="f-date" value="${t.date}"></div>
         <div class="field"><label>Kategorie</label><select id="f-category">${categories.map(c=>`<option value="${escapeAttr(c)}" ${c===t.category?'selected':''}>${c}</option>`).join('')}</select></div>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Betrag (brutto)</label><input type="text" inputmode="decimal" class="num-input" id="f-gross" value="${t.gross?String(t.gross).replace('.',','):''}" placeholder="0,00"><div class="hint">Endbetrag inkl. USt</div></div>
-        <div class="field"><label>USt-Satz</label><select id="f-vat" ${state.settings.kleinunternehmer?'disabled':''}>${VAT_RATES.map(r=>`<option value="${r}" ${r===t.vatRate?'selected':''}>${r} %</option>`).join('')}</select>${state.settings.kleinunternehmer?'<div class="hint">Kleinunternehmer</div>':''}</div>
-      </div>
+
+      ${state.settings.kleinunternehmer?`
+        <div class="field-row">
+          <div class="field"><label>Betrag (brutto)</label><input type="text" inputmode="decimal" class="num-input" id="f-gross" value="${t.gross?String(t.gross).replace('.',','):''}" placeholder="0,00"></div>
+          <div class="field"><label>USt-Satz</label><select id="f-vat" disabled><option value="0">0 %</option></select><div class="hint">Kleinunternehmer</div></div>
+        </div>
+      `:`
+        <div class="field"><label class="toggle" style="padding:6px 0;display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="f-multi-vat" ${isMulti?'checked':''}>
+          <span class="switch"></span>
+          <span class="label"><div class="t" style="font-size:13px;font-weight:600">Mehrere USt-Sätze auf einer Rechnung</div><div class="sub" style="font-size:11.5px;color:var(--ink-muted)">Z.B. 7% + 19% Positionen</div></span>
+        </label></div>
+
+        <div id="single-vat-block" style="${isMulti?'display:none':''}">
+          <div class="field-row">
+            <div class="field"><label>Betrag (brutto)</label><input type="text" inputmode="decimal" class="num-input" id="f-gross" value="${(!isMulti && t.gross)?String(t.gross).replace('.',','):''}" placeholder="0,00"><div class="hint">Endbetrag inkl. USt</div></div>
+            <div class="field"><label>USt-Satz</label><select id="f-vat">${VAT_RATES.map(r=>`<option value="${r}" ${r===t.vatRate?'selected':''}>${r} %</option>`).join('')}</select></div>
+          </div>
+        </div>
+
+        <div id="multi-vat-block" style="${isMulti?'':'display:none'}">
+          <div class="field"><label>Positionen nach USt-Satz</label>
+            <div id="vat-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+            <button type="button" class="btn btn-sm" id="vat-add-row" style="margin-top:6px">+ Position</button>
+            <div class="hint">Trage je USt-Satz den Brutto-Betrag ein. Hankebuch berechnet Netto und USt automatisch und summiert alles.</div>
+          </div>
+          <div id="multi-vat-summary" style="background:var(--bg-sunk);padding:10px 12px;border-radius:8px;font-size:13px;margin-top:6px"></div>
+        </div>
+      `}
+
       <div class="field-row">
         <div class="field"><label>Geschäftspartner</label><input type="text" id="f-contact" value="${escapeAttr(t.contact)}"></div>
         <div class="field"><label>Beleg-/Rechnungsnummer</label><input type="text" id="f-invoice" value="${escapeAttr(t.invoiceNumber)}"></div>
@@ -3704,12 +3752,76 @@ function showReceiptViewer(r){
 
 function attachTxModalExtras(editId){
   const gross=document.getElementById('f-gross');const vat=document.getElementById('f-vat');
-  if(gross)gross.addEventListener('input',updateTxPreview);if(vat)vat.addEventListener('change',updateTxPreview);updateTxPreview();
+  if(gross)gross.addEventListener('input',updateTxPreview);if(vat)vat.addEventListener('change',updateTxPreview);
+
+  // Multi-USt-Logic
+  const multiToggle=document.getElementById('f-multi-vat');
+  if(multiToggle){
+    // Initial existierendes Breakdown laden
+    const editTx=editId?state.transactions.find(t=>t.id===editId):null;
+    const initialRows=editTx?.vatBreakdown||[];
+    if(!state._vatRows) state._vatRows=initialRows.length?initialRows.map(r=>({rate:r.rate,gross:r.net+r.vat})):[];
+
+    const toggleMulti=()=>{
+      const isMulti=multiToggle.checked;
+      document.getElementById('single-vat-block').style.display=isMulti?'none':'';
+      document.getElementById('multi-vat-block').style.display=isMulti?'':'none';
+      if(isMulti && state._vatRows.length===0){
+        // Beim Aktivieren: aktuellen Single-Wert übernehmen, oder zwei leere Zeilen
+        const curGross=parseAmount(document.getElementById('f-gross')?.value||'0');
+        const curRate=parseInt(document.getElementById('f-vat')?.value||'19',10);
+        if(curGross>0){
+          state._vatRows=[{rate:curRate,gross:curGross}];
+        } else {
+          state._vatRows=[{rate:7,gross:0},{rate:19,gross:0}];
+        }
+      }
+      renderVatRows();
+      updateTxPreview();
+    };
+    multiToggle.addEventListener('change',toggleMulti);
+
+    document.getElementById('vat-add-row')?.addEventListener('click',()=>{
+      const usedRates=state._vatRows.map(r=>r.rate);
+      // Nehme einen noch nicht genutzten Satz, oder 19
+      const nextRate=VAT_RATES.find(r=>!usedRates.includes(r))||19;
+      state._vatRows.push({rate:nextRate,gross:0});
+      renderVatRows();
+      updateTxPreview();
+    });
+
+    if(multiToggle.checked) renderVatRows();
+  }
+
   // Hinweis: delete-tx und save-tx werden durch den globalen Action-Handler behandelt.
   // KEIN zusätzlicher addEventListener hier, sonst feuert alles doppelt.
   const zone=document.getElementById('drop-zone');const fi=document.getElementById('receipt-file');
   if(zone&&fi){zone.addEventListener('click',()=>fi.click());fi.addEventListener('change',e=>handleReceiptFiles(Array.from(e.target.files)));zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag');});zone.addEventListener('dragleave',()=>zone.classList.remove('drag'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag');const files=Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/')||f.type==='application/pdf');handleReceiptFiles(files);});}
   bindReceiptGridEvents();
+  updateTxPreview();
+}
+
+function renderVatRows(){
+  const wrap=document.getElementById('vat-rows');
+  if(!wrap)return;
+  wrap.innerHTML=state._vatRows.map((row,i)=>`
+    <div style="display:grid;grid-template-columns:90px 1fr 32px;gap:6px;align-items:center">
+      <select data-vat-row-rate="${i}" style="padding:6px 8px">
+        ${VAT_RATES.map(r=>`<option value="${r}" ${r===row.rate?'selected':''}>${r} %</option>`).join('')}
+      </select>
+      <input type="text" inputmode="decimal" data-vat-row-gross="${i}" value="${row.gross?String(row.gross).replace('.',','):''}" placeholder="Brutto 0,00" style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">
+      <button type="button" class="btn btn-sm" data-vat-row-del="${i}" style="padding:4px 6px;color:var(--terra);border-color:var(--terra)" ${state._vatRows.length<=1?'disabled':''}>×</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('[data-vat-row-rate]').forEach(el=>el.addEventListener('change',e=>{
+    const i=parseInt(el.dataset.vatRowRate,10);state._vatRows[i].rate=parseInt(el.value,10)||0;updateTxPreview();
+  }));
+  wrap.querySelectorAll('[data-vat-row-gross]').forEach(el=>el.addEventListener('input',e=>{
+    const i=parseInt(el.dataset.vatRowGross,10);state._vatRows[i].gross=parseAmount(el.value);updateTxPreview();
+  }));
+  wrap.querySelectorAll('[data-vat-row-del]').forEach(el=>el.addEventListener('click',e=>{
+    const i=parseInt(el.dataset.vatRowDel,10);state._vatRows.splice(i,1);renderVatRows();updateTxPreview();
+  }));
 }
 async function handleReceiptFiles(files){
   for(const file of files){if(file.size>8*1024*1024){toast(`${file.name} zu groß`);continue;}
@@ -3732,10 +3844,25 @@ function bindModal(){
   document.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click',e=>{if(e.currentTarget===e.target||e.currentTarget.classList.contains('modal-close'))closeModal();}));
   document.querySelectorAll('#modal-root [data-action]').forEach(el=>el.addEventListener('click',handleAction));
 }
-function closeModal(){document.getElementById('modal-root').innerHTML='';state.pendingReceipts=[];state._removedReceipts=[];state.invoiceDraft=null;}
+function closeModal(){document.getElementById('modal-root').innerHTML='';state.pendingReceipts=[];state._removedReceipts=[];state.invoiceDraft=null;state._vatRows=null;}
 
 function updateTxPreview(){const el=document.getElementById('tx-preview');if(!el)return;
-  const gross=parseAmount(document.getElementById('f-gross').value);const rate=parseInt(document.getElementById('f-vat').value||'0',10);
+  const multi=document.getElementById('f-multi-vat')?.checked;
+  if(multi){
+    const rows=(state._vatRows||[]).filter(r=>r.gross>0);
+    if(!rows.length){el.innerHTML='<span style="color:var(--ink-muted)">Trage Brutto-Beträge in die Positionen ein …</span>';
+      const sum=document.getElementById('multi-vat-summary');if(sum)sum.innerHTML='';
+      return;}
+    let totalNet=0,totalVat=0,totalGross=0;
+    const breakdown=rows.map(r=>{const c=calcVat(r.gross,r.rate);totalNet+=c.net;totalVat+=c.vat;totalGross+=c.gross;return{rate:r.rate,net:c.net,vat:c.vat,gross:c.gross};});
+    totalNet=round2(totalNet);totalVat=round2(totalVat);totalGross=round2(totalGross);
+    const sum=document.getElementById('multi-vat-summary');
+    if(sum){sum.innerHTML=breakdown.map(b=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>USt ${b.rate}%</span><span class="num" style="font-variant-numeric:tabular-nums">${fmtEUR(b.net)} netto · ${fmtEUR(b.vat)} USt · ${fmtEUR(b.gross)} brutto</span></div>`).join('')+
+      `<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:4px;margin-top:4px;font-weight:600"><span>Gesamt</span><span class="num" style="font-variant-numeric:tabular-nums">${fmtEUR(totalGross)}</span></div>`;}
+    el.innerHTML=`<div><span style="color:var(--ink-muted)">Netto gesamt</span> <span class="num" style="margin-left:6px">${fmtEUR(totalNet)}</span></div><div><span style="color:var(--ink-muted)">USt gesamt</span> <span class="num" style="margin-left:6px">${fmtEUR(totalVat)}</span></div><div><span style="color:var(--ink-muted)">Brutto</span> <span class="num" style="margin-left:6px;font-weight:600">${fmtEUR(totalGross)}</span></div>`;
+    return;
+  }
+  const gross=parseAmount(document.getElementById('f-gross')?.value||'0');const rate=parseInt(document.getElementById('f-vat')?.value||'0',10);
   if(!gross){el.innerHTML='<span style="color:var(--ink-muted)">Gib einen Betrag ein …</span>';return;}
   const{net,vat}=calcVat(gross,rate);
   el.innerHTML=`<div><span style="color:var(--ink-muted)">Netto</span> <span class="num" style="margin-left:6px">${fmtEUR(net)}</span></div><div><span style="color:var(--ink-muted)">USt ${rate}%</span> <span class="num" style="margin-left:6px">${fmtEUR(vat)}</span></div><div><span style="color:var(--ink-muted)">Brutto</span> <span class="num" style="margin-left:6px;font-weight:600">${fmtEUR(gross)}</span></div>`;
@@ -3744,8 +3871,22 @@ function updateTxPreview(){const el=document.getElementById('tx-preview');if(!el
 function collectTxForm(){
   const get=id=>document.getElementById(id)?.value||'';
   const type=document.querySelector('[data-settype].active')?.dataset.settype||'expense';
-  const gross=parseAmount(get('f-gross'));const rate=parseInt(get('f-vat')||'0',10);const calc=calcVat(gross,rate);
-  return{type,date:get('f-date')||todayISO(),description:get('f-desc').trim(),category:get('f-category'),gross:calc.gross,net:calc.net,vat:calc.vat,vatRate:rate,contact:get('f-contact').trim(),invoiceNumber:get('f-invoice').trim(),notes:get('f-notes').trim()};
+  const isMulti=document.getElementById('f-multi-vat')?.checked;
+  const base={type,date:get('f-date')||todayISO(),description:get('f-desc').trim(),category:get('f-category'),contact:get('f-contact').trim(),invoiceNumber:get('f-invoice').trim(),notes:get('f-notes').trim()};
+  if(isMulti){
+    const rows=(state._vatRows||[]).filter(r=>r.gross>0);
+    if(!rows.length) return {...base,gross:0,net:0,vat:0,vatRate:0};
+    // Pro Position USt berechnen
+    let totalNet=0,totalVat=0,totalGross=0;
+    const breakdown=rows.map(r=>{const c=calcVat(r.gross,r.rate);totalNet+=c.net;totalVat+=c.vat;totalGross+=c.gross;return{rate:r.rate,net:c.net,vat:c.vat};});
+    // Bei Multi-USt nehmen wir den höchsten Satz als "primären" Satz für die Hauptansicht.
+    // Die echte Aufschlüsselung steckt in vatBreakdown.
+    const primaryRate=Math.max(...breakdown.map(b=>b.rate));
+    return {...base,gross:round2(totalGross),net:round2(totalNet),vat:round2(totalVat),vatRate:primaryRate,vatBreakdown:breakdown};
+  } else {
+    const gross=parseAmount(get('f-gross'));const rate=parseInt(get('f-vat')||'0',10);const calc=calcVat(gross,rate);
+    return {...base,gross:calc.gross,net:calc.net,vat:calc.vat,vatRate:rate,vatBreakdown:null};
+  }
 }
 async function saveTxFromModal(editId){
   const data=collectTxForm();
