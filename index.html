@@ -1571,9 +1571,6 @@ function buildXRechnungUBL(inv){
   const dueDate=inv.dueDate||issueDate;
   const c=inv.customer||{};
 
-  // Pflichtfeld: BT-1 Invoice Number, BT-2 Date, BT-3 Type Code (380=normale Rechnung)
-  // BT-5 Currency = EUR, BT-22 Note (optional), BT-9 Due Date
-
   // Verkäufer-Land (DE als Default)
   const sellerCountry='DE';
   // Käufer-Land
@@ -1593,11 +1590,19 @@ function buildXRechnungUBL(inv){
   if(!c.street) warnings.push('Käufer-Straße fehlt');
   if(!c.city) warnings.push('Käufer-Ort fehlt');
 
+  // Elektronische Adressen (BT-34, BT-49) – Pflicht in XRechnung 3.x
+  // Format: schemeID="EM" für E-Mail (Email Address)
+  const sellerEndpoint=s.email||'';
+  const buyerEndpoint=c.email||'';
+
+  // Kontaktperson (BT-41) – Name oder Firma
+  const sellerContactName=s.ownerName||s.businessName||'Kontakt';
+
   const xml=`<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
   xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
   <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
   <cbc:ID>${xmlEscape(inv.number)}</cbc:ID>
   <cbc:IssueDate>${xmlEscape(issueDate)}</cbc:IssueDate>
@@ -1609,6 +1614,7 @@ function buildXRechnungUBL(inv){
 
   <cac:AccountingSupplierParty>
     <cac:Party>
+      <cbc:EndpointID schemeID="EM">${xmlEscape(sellerEndpoint||'no-email@example.com')}</cbc:EndpointID>
       <cac:PartyName>
         <cbc:Name>${xmlEscape(s.businessName||s.ownerName||'')}</cbc:Name>
       </cac:PartyName>
@@ -1632,14 +1638,16 @@ function buildXRechnungUBL(inv){
         <cbc:RegistrationName>${xmlEscape(s.businessName||s.ownerName||'')}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
       <cac:Contact>
-        ${s.email?`<cbc:ElectronicMail>${xmlEscape(s.email)}</cbc:ElectronicMail>`:''}
+        <cbc:Name>${xmlEscape(sellerContactName)}</cbc:Name>
         ${s.phone?`<cbc:Telephone>${xmlEscape(s.phone)}</cbc:Telephone>`:''}
+        ${s.email?`<cbc:ElectronicMail>${xmlEscape(s.email)}</cbc:ElectronicMail>`:''}
       </cac:Contact>
     </cac:Party>
   </cac:AccountingSupplierParty>
 
   <cac:AccountingCustomerParty>
     <cac:Party>
+      <cbc:EndpointID schemeID="EM">${xmlEscape(buyerEndpoint||'no-email@example.com')}</cbc:EndpointID>
       <cac:PartyName>
         <cbc:Name>${xmlEscape(c.name||'')}</cbc:Name>
       </cac:PartyName>
@@ -1734,10 +1742,12 @@ function downloadXRechnung(inv){
   if(!s.zip) missing.push('Deine PLZ');
   if(!s.city) missing.push('Dein Ort');
   if(!s.taxNumber && !s.vatId) missing.push('Deine Steuernummer oder USt-IdNr.');
+  if(!s.email) missing.push('Deine E-Mail (Pflicht für E-Rechnung)');
   if(!c.name) missing.push('Käufer-Name');
   if(!c.street) missing.push('Käufer-Straße');
   if(!c.zip) missing.push('Käufer-PLZ');
   if(!c.city) missing.push('Käufer-Ort');
+  if(!c.email) missing.push('Käufer-E-Mail (Pflicht für E-Rechnung)');
   if(missing.length){
     if(!confirm(`Pflichtfelder für E-Rechnung fehlen:\n\n• ${missing.join('\n• ')}\n\nDie XRechnung wird trotzdem erzeugt, wird aber von strengen Validatoren abgelehnt. Trotzdem herunterladen?`))return;
   }
