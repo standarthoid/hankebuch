@@ -888,10 +888,10 @@ function renderDashboard(){
   const q=quoteOfTheDay();
   const monthTx=state.transactions.filter(t=>{const[y,m]=t.date.split('-').map(Number);return y===cy&&(m-1)===cm;});
   const yearTx=state.transactions.filter(t=>t.date.startsWith(String(state.year)));
-  const monthIncome=sumNet(monthTx.filter(t=>t.type==='income'));
-  const monthExpense=sumNet(monthTx.filter(t=>t.type==='expense'));
-  const yearIncome=sumNet(yearTx.filter(t=>t.type==='income'));
-  const yearExpense=sumNet(yearTx.filter(t=>t.type==='expense'));
+  const monthIncome=sumGross(monthTx.filter(t=>t.type==='income'));
+  const monthExpense=sumGross(monthTx.filter(t=>t.type==='expense'));
+  const yearIncome=sumGross(yearTx.filter(t=>t.type==='income'));
+  const yearExpense=sumGross(yearTx.filter(t=>t.type==='expense'));
   const yearProfit=yearIncome-yearExpense;
   const recent=[...state.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   const ust=calcVatBalance(yearTx);
@@ -1108,6 +1108,10 @@ function renderInvoiceModal(){
             <div class="field"><label>Land</label><input type="text" id="cust-country" value="${escapeAttr(inv.customer.country)}"></div>
             <div class="field"><label>E-Mail</label><input type="email" id="cust-email" value="${escapeAttr(inv.customer.email||'')}"></div>
           </div>
+          <div class="field-row">
+            <div class="field"><label>USt-IdNr. (B2B, optional)</label><input type="text" id="cust-vatid" value="${escapeAttr(inv.customer.vatId||'')}" placeholder="z. B. DE123456789"></div>
+            <div class="field"><label>Leitweg-ID / Bestellnummer (optional)</label><input type="text" id="cust-buyer-ref" value="${escapeAttr(inv.customer.buyerReference||'')}"></div>
+          </div>
           <div class="divider">Positionen</div>
           <div class="inv-items" id="inv-items">
             <div class="inv-item-head">
@@ -1160,6 +1164,7 @@ function renderInvoiceModal(){
           <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
             ${!inv._isNew?`<button class="btn" data-action="delete-invoice" style="color:var(--terra);border-color:var(--terra)">${ICON.trash}</button>`:''}
             <button class="btn" data-action="preview-invoice">Vorschau</button>
+            <button class="btn" data-action="download-xrechnung" title="E-Rechnung XML für B2B-Kunden">XRechnung</button>
             <button class="btn btn-primary" data-action="save-and-pdf" style="flex:1">${ICON.print} PDF drucken</button>
             <button class="btn btn-green" data-action="save-invoice">Speichern</button>
           </div>
@@ -1244,6 +1249,8 @@ function collectInvoiceDraft(){
     city:document.getElementById('cust-city').value.trim(),
     country:document.getElementById('cust-country').value.trim(),
     email:document.getElementById('cust-email').value.trim(),
+    vatId:(document.getElementById('cust-vatid')?.value||'').trim(),
+    buyerReference:(document.getElementById('cust-buyer-ref')?.value||'').trim(),
   };
   inv.introText=document.getElementById('inv-intro').value;
   inv.paymentTerms=document.getElementById('inv-terms').value;
@@ -1530,6 +1537,220 @@ function previewInvoice(){
     <div class="viewer-content" onclick="event.stopPropagation()">${html}</div>
   </div>`;
   root.querySelectorAll('[data-close-viewer]').forEach(el=>el.addEventListener('click',e=>{if(e.currentTarget===e.target||e.currentTarget.classList.contains('viewer-close'))closeViewer();}));
+}
+
+/* ============================================================
+   XRECHNUNG (UBL 2.1) – E-Rechnung nach EN 16931 für B2B
+   ============================================================ */
+
+function xmlEscape(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
+// USt-Kategorie-Code nach UNCL5305
+//   S = Standard rate (z.B. 19% oder 7%)
+//   Z = Zero rated goods
+//   E = VAT exempt (steuerbefreit)
+//   AE = VAT Reverse Charge
+function vatCategoryCode(rate, isKleinunternehmer){
+  if(isKleinunternehmer) return 'E';      // Steuerbefreit nach §19 UStG
+  if(rate>0) return 'S';
+  return 'Z';
+}
+
+function vatExemptionReason(isKleinunternehmer){
+  if(isKleinunternehmer) return 'Kleinunternehmer gemäß §19 UStG';
+  return '';
+}
+
+function buildXRechnungUBL(inv){
+  const s=state.settings;
+  const klein=s.kleinunternehmer && inv.includeKleinunternehmerNotice;
+  const totals=computeInvoiceTotals(inv);
+  const issueDate=inv.invoiceDate||todayISO();
+  const dueDate=inv.dueDate||issueDate;
+  const c=inv.customer||{};
+
+  // Pflichtfeld: BT-1 Invoice Number, BT-2 Date, BT-3 Type Code (380=normale Rechnung)
+  // BT-5 Currency = EUR, BT-22 Note (optional), BT-9 Due Date
+
+  // Verkäufer-Land (DE als Default)
+  const sellerCountry='DE';
+  // Käufer-Land
+  const buyerCountry=(c.country||'DE').toUpperCase().slice(0,2);
+
+  // USt-Aufschlüsselung gruppiert
+  const taxSubtotals=klein
+    ? [{rate:0,base:totals.totalNet,vat:0,categoryCode:'E'}]
+    : (totals.vatBreakdown.length
+        ? totals.vatBreakdown.map(v=>({rate:v.rate,base:v.base,vat:v.vat,categoryCode:'S'}))
+        : [{rate:0,base:totals.totalNet,vat:0,categoryCode:'Z'}]);
+
+  // Pflicht-Felder validieren und Hinweise sammeln
+  const warnings=[];
+  if(!s.taxNumber && !s.vatId) warnings.push('Verkäufer ohne Steuernummer und USt-IdNr.');
+  if(!c.name) warnings.push('Käufer-Name fehlt');
+  if(!c.street) warnings.push('Käufer-Straße fehlt');
+  if(!c.city) warnings.push('Käufer-Ort fehlt');
+
+  const xml=`<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+  xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>${xmlEscape(inv.number)}</cbc:ID>
+  <cbc:IssueDate>${xmlEscape(issueDate)}</cbc:IssueDate>
+  <cbc:DueDate>${xmlEscape(dueDate)}</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  ${inv.notes?`<cbc:Note>${xmlEscape(inv.notes)}</cbc:Note>`:''}
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>${xmlEscape(c.buyerReference||c.name||inv.number)}</cbc:BuyerReference>
+
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>${xmlEscape(s.businessName||s.ownerName||'')}</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${xmlEscape(s.street||'')}</cbc:StreetName>
+        <cbc:CityName>${xmlEscape(s.city||'')}</cbc:CityName>
+        <cbc:PostalZone>${xmlEscape(s.zip||'')}</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>${xmlEscape(sellerCountry)}</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      ${s.vatId?`<cac:PartyTaxScheme>
+        <cbc:CompanyID>${xmlEscape(s.vatId)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`:''}
+      ${s.taxNumber?`<cac:PartyTaxScheme>
+        <cbc:CompanyID>${xmlEscape(s.taxNumber)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>FC</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`:''}
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${xmlEscape(s.businessName||s.ownerName||'')}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        ${s.email?`<cbc:ElectronicMail>${xmlEscape(s.email)}</cbc:ElectronicMail>`:''}
+        ${s.phone?`<cbc:Telephone>${xmlEscape(s.phone)}</cbc:Telephone>`:''}
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>${xmlEscape(c.name||'')}</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${xmlEscape(c.street||'')}</cbc:StreetName>
+        <cbc:CityName>${xmlEscape(c.city||'')}</cbc:CityName>
+        <cbc:PostalZone>${xmlEscape(c.zip||'')}</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>${xmlEscape(buyerCountry)}</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      ${c.vatId?`<cac:PartyTaxScheme>
+        <cbc:CompanyID>${xmlEscape(c.vatId)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`:''}
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${xmlEscape(c.name||'')}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+
+  ${s.iban?`<cac:PaymentMeans>
+    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
+    <cbc:PaymentID>${xmlEscape(inv.number)}</cbc:PaymentID>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>${xmlEscape(s.iban.replace(/\s/g,''))}</cbc:ID>
+      ${s.bankAccountHolder||s.businessName||s.ownerName?`<cbc:Name>${xmlEscape(s.bankAccountHolder||s.businessName||s.ownerName)}</cbc:Name>`:''}
+      ${s.bic?`<cac:FinancialInstitutionBranch><cbc:ID>${xmlEscape(s.bic)}</cbc:ID></cac:FinancialInstitutionBranch>`:''}
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>`:''}
+
+  ${inv.paymentTerms?`<cac:PaymentTerms>
+    <cbc:Note>${xmlEscape(inv.paymentTerms)}</cbc:Note>
+  </cac:PaymentTerms>`:''}
+
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">${totals.totalVat.toFixed(2)}</cbc:TaxAmount>
+    ${taxSubtotals.map(t=>`<cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${t.base.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${t.vat.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>${t.categoryCode}</cbc:ID>
+        <cbc:Percent>${t.rate.toFixed(2)}</cbc:Percent>
+        ${t.categoryCode==='E'?`<cbc:TaxExemptionReason>${xmlEscape(vatExemptionReason(klein))}</cbc:TaxExemptionReason>`:''}
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`).join('')}
+  </cac:TaxTotal>
+
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">${totals.totalNet.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">${totals.totalNet.toFixed(2)}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">${totals.totalGross.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">${totals.totalGross.toFixed(2)}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+
+${(totals.lines||[]).map((l,idx)=>{
+  const rate=klein?0:l.rate;
+  const cat=klein?'E':(rate>0?'S':'Z');
+  const desc=l.description||'Position';
+  return `  <cac:InvoiceLine>
+    <cbc:ID>${idx+1}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="${(l.unit||'').toLowerCase().includes('std')?'HUR':(l.unit||'').toLowerCase().includes('tag')?'DAY':(l.unit||'').toLowerCase().includes('km')?'KMT':(l.unit||'').toLowerCase().includes('kg')?'KGM':'C62'}">${(l.qty||0).toFixed(2)}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">${l.lineNet.toFixed(2)}</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>${xmlEscape(desc.split('\n')[0].slice(0,200))}</cbc:Name>
+      ${desc.includes('\n')||desc.length>200?`<cbc:Description>${xmlEscape(desc)}</cbc:Description>`:''}
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${cat}</cbc:ID>
+        <cbc:Percent>${rate.toFixed(2)}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">${(l.unitPrice||0).toFixed(2)}</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>`;
+}).join('\n')}
+
+</Invoice>
+`;
+  return {xml, warnings};
+}
+
+function downloadXRechnung(inv){
+  // Pflichtfelder prüfen, sonst warnen
+  const s=state.settings;
+  const c=inv.customer||{};
+  const missing=[];
+  if(!s.businessName && !s.ownerName) missing.push('Dein Firmenname / Name');
+  if(!s.street) missing.push('Deine Straße');
+  if(!s.zip) missing.push('Deine PLZ');
+  if(!s.city) missing.push('Dein Ort');
+  if(!s.taxNumber && !s.vatId) missing.push('Deine Steuernummer oder USt-IdNr.');
+  if(!c.name) missing.push('Käufer-Name');
+  if(!c.street) missing.push('Käufer-Straße');
+  if(!c.zip) missing.push('Käufer-PLZ');
+  if(!c.city) missing.push('Käufer-Ort');
+  if(missing.length){
+    if(!confirm(`Pflichtfelder für E-Rechnung fehlen:\n\n• ${missing.join('\n• ')}\n\nDie XRechnung wird trotzdem erzeugt, wird aber von strengen Validatoren abgelehnt. Trotzdem herunterladen?`))return;
+  }
+
+  const {xml}=buildXRechnungUBL(inv);
+  const filename=`${inv.number||'Rechnung'}_XRechnung.xml`;
+  const blob=new Blob([xml],{type:'application/xml;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+  toast(`E-Rechnung heruntergeladen: ${filename}`);
 }
 
 function printInvoice(inv){
@@ -3202,6 +3423,12 @@ Gutschriften: ${yearCN.length}`;
           const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rechnung ${escapeHtml(inv.number)}</title></head><body>${renderInvoicePdfHTML(inv)}</body></html>`;
           const fname=`${inv.date||'undatiert'}_${safeFilename(inv.number)}_${safeFilename((inv.recipient?.name||'').slice(0,40))}.html`;
           rFolder.file(fname, html);
+          // XRechnung-XML zusätzlich für B2B-Archiv
+          try{
+            const {xml}=buildXRechnungUBL(inv);
+            const xmlName=`${inv.date||'undatiert'}_${safeFilename(inv.number)}_XRechnung.xml`;
+            rFolder.file(xmlName, xml);
+          }catch(e){console.warn('XRechnung XML fehlgeschlagen:',inv.number,e);}
         }catch(e){console.warn('Rechnung konnte nicht erzeugt werden:',inv.number,e);}
       }
     }
@@ -3577,6 +3804,7 @@ function handleAction(e){
     case 'save-settings':saveSettingsFromModal();break;
     case 'save-invoice':saveInvoice().then(inv=>{if(inv){closeModal();render();}});break;
     case 'save-and-pdf':saveInvoice().then(inv=>{if(inv){printInvoice(inv);closeModal();render();}});break;
+    case 'download-xrechnung':saveInvoice().then(inv=>{if(inv){downloadXRechnung(inv);}});break;
     case 'preview-invoice':previewInvoice();break;
     case 'delete-invoice':deleteInvoice();break;
     case 'add-item':addInvoiceItem();break;
