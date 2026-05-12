@@ -2173,20 +2173,31 @@ function defaultDateForEntry(){
 }
 
 function renderVendorsView(){
-  const vendors=[...state.vendors].sort((a,b)=>(a.name||'').localeCompare(b.name||'','de'));
+  // Stats für alle Anbieter berechnen, dann sortieren nach Umsatz absteigend (Anbieter ohne Verkäufe ans Ende)
+  const vendorsWithStats=state.vendors.map(v=>({v, stats:calcVendorStats(v.id, state.year)}));
+  vendorsWithStats.sort((a,b)=>{
+    const sa=a.stats?.grossSales||0, sb=b.stats?.grossSales||0;
+    if(sa!==sb) return sb-sa;
+    return (a.v.name||'').localeCompare(b.v.name||'','de');
+  });
+  const vendors=vendorsWithStats.map(x=>x.v);
   const countTotal=vendors.length;
   const countKU=vendors.filter(v=>v.kleinunternehmer).length;
   const countRegular=countTotal-countKU;
+  const activeStats=vendorsWithStats.filter(x=>x.stats&&x.stats.grossSales>0);
+  const totalSales=round2(activeStats.reduce((s,x)=>s+x.stats.grossSales,0));
+  const totalCommission=round2(activeStats.reduce((s,x)=>s+x.stats.commission,0));
+  const totalOpenPayouts=round2(vendorsWithStats.reduce((s,x)=>s+(x.stats?.openPayoutGross||0),0));
   return `
     <div class="row" style="margin-bottom:16px">
-      <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>Anbieter</b></h1>
+      <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>Anbieter</b> ${state.year}</h1>
       <button class="btn btn-primary" data-action="new-vendor">${ICON.plus} Anbieter</button>
     </div>
     ${countTotal>0?`
       <div class="kpi-grid">
-        <div class="kpi"><div class="k-label">Anbieter gesamt</div><div class="k-value">${countTotal}</div></div>
-        <div class="kpi"><div class="k-label">Regelbesteuert</div><div class="k-value">${countRegular}</div><div class="k-sub">mit USt-Ausweis</div></div>
-        <div class="kpi"><div class="k-label">Kleinunternehmer</div><div class="k-value">${countKU}</div><div class="k-sub">§19 UStG</div></div>
+        <div class="kpi"><div class="k-label">Umsatz Anbieter ${state.year}</div><div class="k-value">${fmtEUR(totalSales)}</div><div class="k-sub">${activeStats.length} aktive · ${countTotal} gesamt</div></div>
+        <div class="kpi"><div class="k-label">Deine Provision</div><div class="k-value" style="color:var(--green)">${fmtEUR(totalCommission)}</div><div class="k-sub">${totalSales>0?round2(totalCommission/totalSales*100).toFixed(1):0}% Ø</div></div>
+        <div class="kpi"><div class="k-label">Offen auszuzahlen</div><div class="k-value" style="color:${totalOpenPayouts>0?'var(--gold)':'var(--ink-muted)'}">${fmtEUR(totalOpenPayouts)}</div><div class="k-sub">aus Gutschriften</div></div>
       </div>
     `:''}
     <div class="card">
@@ -2203,12 +2214,49 @@ function renderVendorsView(){
   `;
 }
 
+function calcVendorStats(vendorId, year){
+  const v=state.vendors.find(x=>x.id===vendorId);
+  if(!v||v.productVendorId==null)return null;
+  let grossSales=0, vendorShare=0, commission=0, orderCount=0;
+  const yr=String(year);
+  state.transactions.forEach(t=>{
+    if(t.type!=='income')return;
+    if(!t.date.startsWith(yr))return;
+    (t.wooVendors||[]).forEach(wv=>{
+      if(wv.vendor_id!==v.productVendorId)return;
+      grossSales+=(wv.line_total_net||0)+(wv.line_total_tax||0);
+      const pluginPct=wv.items?.[0]?.commission_pct||0;
+      const pluginComm=wv.commission||0;
+      let effShare, effComm;
+      if(pluginPct>0||pluginComm>0){ effShare=wv.vendor_share; effComm=pluginComm; }
+      else if(v.commissionPct>0){ effComm=(wv.line_total_net||0)*v.commissionPct/100; effShare=(wv.line_total_net||0)-effComm; }
+      else { effComm=0; effShare=wv.line_total_net||0; }
+      vendorShare+=effShare; commission+=effComm; orderCount++;
+    });
+  });
+  const cnYear=state.creditNotes.filter(c=>c.vendorId===v.id && (c.issueDate||'').startsWith(yr));
+  const cnPaid=cnYear.filter(c=>c.status==='paid');
+  return {
+    grossSales:round2(grossSales),
+    vendorShare:round2(vendorShare),
+    commission:round2(commission),
+    orderCount,
+    cnCount:cnYear.length,
+    cnPaidCount:cnPaid.length,
+    totalCreditedGross:round2(cnYear.reduce((s,c)=>s+(c.totalGross||0),0)),
+    totalPaidGross:round2(cnPaid.reduce((s,c)=>s+(c.totalGross||0),0)),
+    openPayoutGross:round2(cnYear.reduce((s,c)=>s+(c.totalGross||0),0)-cnPaid.reduce((s,c)=>s+(c.totalGross||0),0)),
+  };
+}
+
 function renderVendorRow(v){
   const addr=[v.street,[v.zip,v.city].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
-  const comm=typeof v.commissionPct==='number'?`${v.commissionPct.toLocaleString('de-DE',{maximumFractionDigits:2})} %`:'–';
+  const stats=calcVendorStats(v.id, state.year);
   const tags=[];
   if(v.kleinunternehmer) tags.push('<span class="cat-chip">§19 KU</span>');
-  if(v.company) tags.push(`<span class="cat-chip">${escapeHtml(v.company)}</span>`);
+  if(typeof v.commissionPct==='number'&&v.commissionPct>0) tags.push(`<span class="cat-chip">${v.commissionPct.toLocaleString('de-DE',{maximumFractionDigits:2})}% Provision</span>`);
+  if(stats&&stats.openPayoutGross>0) tags.push(`<span class="cat-chip" style="background:rgba(184,154,90,0.18);color:var(--gold-dark, #876b30)">${fmtEUR(stats.openPayoutGross)} offen</span>`);
+  const showSales=stats&&stats.grossSales>0;
   return `<div class="tx-item" data-edit-vendor="${v.id}" style="cursor:pointer">
     <div class="tx-dot" style="background:var(--gold)"></div>
     <div class="tx-main">
@@ -2220,8 +2268,7 @@ function renderVendorRow(v){
       </div>
     </div>
     <div class="tx-amount" style="text-align:right">
-      <div style="font-variant-numeric:tabular-nums">${comm}</div>
-      <span class="sub">Provision</span>
+      ${showSales?`<div style="font-variant-numeric:tabular-nums">${fmtEUR(stats.grossSales)}</div><span class="sub">${stats.orderCount} Best. · ${state.year}</span>`:`<div style="font-variant-numeric:tabular-nums;color:var(--ink-muted)">–</div><span class="sub">keine Verkäufe</span>`}
     </div>
   </div>`;
 }
@@ -2235,8 +2282,25 @@ function openVendorModal(id){
     v={id:uid('ven'),name:'',company:'',street:'',zip:'',city:'',country:'Deutschland',email:'',phone:'',taxNumber:'',vatId:'',iban:'',bic:'',bankName:'',commissionPct:15,kleinunternehmer:false,notes:''};
   }
   const isEdit=!!id;
+  const stats=isEdit?calcVendorStats(v.id, state.year):null;
+  const statsHTML=stats&&(stats.grossSales>0||stats.cnCount>0)?`
+    <div class="section-title">Performance ${state.year}</div>
+    <div style="background:var(--bg-sunk);padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
+        <div><div style="color:var(--ink-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">Bruttoumsatz</div><div class="num" style="font-size:16px;font-weight:600">${fmtEUR(stats.grossSales)}</div></div>
+        <div><div style="color:var(--ink-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">Bestellungen</div><div class="num" style="font-size:16px;font-weight:600">${stats.orderCount}</div></div>
+        <div><div style="color:var(--ink-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">Anbieter-Anteil netto</div><div class="num" style="font-size:14px">${fmtEUR(stats.vendorShare)}</div></div>
+        <div><div style="color:var(--ink-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">Deine Provision</div><div class="num" style="font-size:14px;color:var(--green)">${fmtEUR(stats.commission)}</div></div>
+      </div>
+      ${stats.cnCount>0?`<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px;font-size:12px;color:var(--ink-muted)">
+        ${stats.cnCount} Gutschrift${stats.cnCount===1?'':'en'} · ${stats.cnPaidCount} bezahlt
+        ${stats.openPayoutGross>0?`<br><strong style="color:var(--gold)">Offen auszuzahlen: ${fmtEUR(stats.openPayoutGross)}</strong>`:''}
+      </div>`:''}
+    </div>
+  `:'';
   document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" data-close-modal><div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head"><h2>${isEdit?'Anbieter bearbeiten':'Neuer Anbieter'}</h2><button class="modal-close" data-close-modal>${ICON.close}</button></div>
+    ${statsHTML}
     <div class="section-title">Stammdaten</div>
     <div class="field"><label>Name (Vor- und Nachname) *</label>
       <input type="text" id="v-name" value="${escapeAttr(v.name)}" placeholder="z.B. Max Mustermann" required>
@@ -3054,6 +3118,51 @@ function renderStats(){
   const topContacts=Object.entries(byContact).map(([n,a])=>({name:n,amt:round2(a)})).sort((a,b)=>b.amt-a.amt).slice(0,5);
   const maxContact=topContacts[0]?.amt||1;
   const catsIn=groupByCategory(income);const catsEx=groupByCategory(expense);
+
+  // Anbieter-Performance: Umsatz und Gutschriften pro Anbieter im aktuellen Jahr
+  const vendorStats=state.vendors.map(v=>{
+    if(v.productVendorId==null)return null;
+    // Brutto-Verkäufe aus den Transaktionen
+    let grossSales=0, vendorShare=0, commission=0, orderCount=0;
+    yearTx.forEach(t=>{
+      if(t.type!=='income')return;
+      (t.wooVendors||[]).forEach(wv=>{
+        if(wv.vendor_id!==v.productVendorId)return;
+        grossSales+=(wv.line_total_net||0)+(wv.line_total_tax||0);
+        // Provision korrekt ausrechnen (mit Hankebuch-Fallback wie im Generator)
+        const pluginPct=wv.items?.[0]?.commission_pct||0;
+        const pluginComm=wv.commission||0;
+        let effShare, effComm;
+        if(pluginPct>0||pluginComm>0){ effShare=wv.vendor_share; effComm=pluginComm; }
+        else if(v.commissionPct>0){ effComm=(wv.line_total_net||0)*v.commissionPct/100; effShare=(wv.line_total_net||0)-effComm; }
+        else { effComm=0; effShare=wv.line_total_net||0; }
+        vendorShare+=effShare; commission+=effComm; orderCount++;
+      });
+    });
+    // Gutschriften des Jahres für diesen Anbieter
+    const cnYear=state.creditNotes.filter(c=>c.vendorId===v.id && (c.issueDate||'').startsWith(String(state.year)));
+    const cnPaid=cnYear.filter(c=>c.status==='paid');
+    const totalCreditedGross=round2(cnYear.reduce((s,c)=>s+(c.totalGross||0),0));
+    const totalPaidGross=round2(cnPaid.reduce((s,c)=>s+(c.totalGross||0),0));
+    const openPayoutGross=round2(totalCreditedGross-totalPaidGross);
+    return {
+      vendor:v,
+      grossSales:round2(grossSales),
+      vendorShare:round2(vendorShare),
+      commission:round2(commission),
+      orderCount,
+      cnCount:cnYear.length,
+      cnPaidCount:cnPaid.length,
+      totalCreditedGross,
+      totalPaidGross,
+      openPayoutGross,
+    };
+  }).filter(Boolean).filter(s=>s.grossSales>0||s.cnCount>0).sort((a,b)=>b.grossSales-a.grossSales);
+
+  const vendorTotalGross=round2(vendorStats.reduce((s,v)=>s+v.grossSales,0));
+  const vendorTotalCommission=round2(vendorStats.reduce((s,v)=>s+v.commission,0));
+  const vendorTotalOpen=round2(vendorStats.reduce((s,v)=>s+v.openPayoutGross,0));
+  const maxVendorSale=vendorStats[0]?.grossSales||1;
   return `
     <div class="row" style="margin-bottom:6px">
       <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>Statistik</b> ${state.year}</h1>
@@ -3104,6 +3213,22 @@ function renderStats(){
         <div class="amount">${fmtEUR(c.amt)}</div>
         <div class="bar-track"><div style="width:${(c.amt/maxContact*100).toFixed(0)}%"></div></div>
       </div>`).join('')}</div></div>`:''}
+    ${vendorStats.length?`<div class="card"><div class="section-title">Marketplace-Anbieter ${state.year}</div>
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi"><div class="k-label">Umsatz gesamt</div><div class="k-value">${fmtEUR(vendorTotalGross)}</div><div class="k-sub">${vendorStats.length} aktive Anbieter</div></div>
+        <div class="kpi"><div class="k-label">Deine Provision</div><div class="k-value" style="color:var(--green)">${fmtEUR(vendorTotalCommission)}</div><div class="k-sub">${vendorTotalGross>0?round2(vendorTotalCommission/vendorTotalGross*100).toFixed(1):0}% Ø</div></div>
+        <div class="kpi"><div class="k-label">Offene Auszahlungen</div><div class="k-value" style="color:${vendorTotalOpen>0?'var(--gold)':'var(--ink-muted)'}">${fmtEUR(vendorTotalOpen)}</div><div class="k-sub">noch nicht überwiesen</div></div>
+      </div>
+      <div class="top-list">${vendorStats.map((v,i)=>`<div class="top-item" data-edit-vendor="${v.vendor.id}" style="cursor:pointer">
+        <div class="rank">${i+1}</div>
+        <div>
+          <div class="name">${escapeHtml(v.vendor.name)}${v.vendor.kleinunternehmer?' <span class="cat-chip" style="font-size:10px">§19</span>':''}</div>
+          <div class="sub">${v.orderCount} Bestellung${v.orderCount===1?'':'en'} · Provision ${fmtEUR(v.commission)}${v.openPayoutGross>0?' · <span style="color:var(--gold)">'+fmtEUR(v.openPayoutGross)+' offen</span>':''}</div>
+        </div>
+        <div class="amount">${fmtEUR(v.grossSales)}</div>
+        <div class="bar-track"><div style="width:${(v.grossSales/maxVendorSale*100).toFixed(0)}%"></div></div>
+      </div>`).join('')}</div>
+    </div>`:''}
     ${!state.settings.kleinunternehmer?`<div class="card"><div class="section-title">Umsatzsteuer ${state.year}</div>
       <div class="cat-row"><div class="cat-name">Vereinnahmte Umsatzsteuer</div><div class="cat-amt">${fmtEUR(ust.collected)}</div></div>
       <div class="cat-row"><div class="cat-name">Gezahlte Vorsteuer</div><div class="cat-amt">−${fmtEUR(ust.paid)}</div></div>
