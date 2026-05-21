@@ -292,6 +292,9 @@
   .inv-item{display:grid;grid-template-columns:1fr 65px 80px 65px 90px 32px;gap:6px;padding:8px;border-bottom:1px solid var(--line);align-items:center}
   .i-unit-wrap{display:flex;flex-direction:column;gap:3px}
   .i-unit-wrap .i-unit{font-size:12px;padding:4px 6px !important}
+  .i-qty-wrap{position:relative}
+  .i-qty-wrap .i-qty{padding-right:26px !important}
+  .i-qty-wrap .i-time-btn:hover{background:var(--green-soft) !important;color:var(--green) !important}
   .inv-item:last-child{border-bottom:none}
   .inv-item input,.inv-item select{padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg-card);font-size:13px;width:100%}
   .inv-item .del-line{width:30px;height:30px;border-radius:50%;color:var(--terra);display:grid;place-items:center}
@@ -360,6 +363,7 @@
 <body>
 <div id="app"><div class="loading">Lade Hankebuch …</div></div>
 <div id="modal-root"></div>
+<div id="time-dialog-root"></div>
 <div id="viewer-root"></div>
 <div id="toast-root"></div>
 
@@ -835,6 +839,7 @@ const ICON = {
   cal:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4m8-4v4" stroke-linecap="round"/></svg>',
   settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   close:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" stroke-width="1.8" fill="none" stroke="currentColor"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg>',
   plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   download:'<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   upload:'<svg viewBox="0 0 24 24"><path d="M12 15V3m0 0l-4 4m4-4l4 4M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1179,9 +1184,13 @@ function renderInvItemRow(it,idx){
   const units=['Stk.','Std.','Tag','Pauschal','km','m','m²','kg','l','Min.','Woche','Monat'];
   const unitVal=it.unit||'Stk.';
   const isCustom=!units.includes(unitVal);
+  const hasTimeData=Array.isArray(it.timeEntries)&&it.timeEntries.length>0;
   return `<div class="inv-item" data-item-idx="${idx}">
     <input type="text" class="i-desc" placeholder="z. B. Webdesign Stunden" value="${escapeAttr(it.description||'')}">
-    <input type="text" inputmode="decimal" class="i-qty num-input" value="${String(it.qty||0).replace('.',',')}" placeholder="1">
+    <div class="i-qty-wrap" style="position:relative">
+      <input type="text" inputmode="decimal" class="i-qty num-input" value="${String(it.qty||0).replace('.',',')}" placeholder="1">
+      <button type="button" class="i-time-btn" data-time-btn="${idx}" title="Stunden aus Zeitspannen berechnen" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:none;background:${hasTimeData?'var(--green-soft)':'transparent'};color:${hasTimeData?'var(--green)':'var(--ink-muted)'};border-radius:4px;cursor:pointer;display:grid;place-items:center;padding:0">${ICON.clock}</button>
+    </div>
     <div class="i-unit-wrap">
       <select class="i-unit-select" data-unit-select>
         ${units.map(u=>`<option value="${u}" ${u===unitVal?'selected':''}>${u}</option>`).join('')}
@@ -1232,6 +1241,11 @@ function bindInvoiceForm(){
     }
     renderInvoiceModal();
   }));
+  document.querySelectorAll('[data-time-btn]').forEach(b=>b.addEventListener('click',e=>{
+    e.preventDefault();
+    const idx=parseInt(b.dataset.timeBtn,10);
+    openTimeDialog(idx);
+  }));
 }
 
 function collectInvoiceDraft(){
@@ -1261,13 +1275,17 @@ function collectInvoiceDraft(){
   const rightsPr=document.getElementById('inv-rights-production'); if(rightsPr) inv.rightsProductionName=rightsPr.value;
   const k=document.getElementById('inv-klein');
   if(k)inv.includeKleinunternehmerNotice=k.checked;
-  inv.items=Array.from(document.querySelectorAll('.inv-item')).map(row=>({
-    description:row.querySelector('.i-desc').value,
-    qty:parseAmount(row.querySelector('.i-qty').value),
-    unit:row.querySelector('.i-unit').value,
-    vatRate:parseInt(row.querySelector('.i-vat').value,10),
-    unitPrice:parseAmount(row.querySelector('.i-price').value),
-  }));
+  inv.items=Array.from(document.querySelectorAll('.inv-item')).map((row,idx)=>{
+    const existing=state.invoiceDraft.items[idx]||{};
+    return {
+      description:row.querySelector('.i-desc').value,
+      qty:parseAmount(row.querySelector('.i-qty').value),
+      unit:row.querySelector('.i-unit').value,
+      vatRate:parseInt(row.querySelector('.i-vat').value,10),
+      unitPrice:parseAmount(row.querySelector('.i-price').value),
+      timeEntries:existing.timeEntries||undefined,
+    };
+  });
   const totals=computeInvoiceTotals(inv);
   const totEl=document.querySelector('.inv-totals');
   if(totEl){
@@ -3982,6 +4000,230 @@ function handleAction(e){
 }
 
 function addInvoiceItem(){collectInvoiceDraft();state.invoiceDraft.items.push({description:'',qty:1,unit:'Stk.',unitPrice:0,vatRate:state.settings.defaultVatRate});renderInvoiceModal();}
+
+/* ============================================================
+   ZEIT-ERFASSUNG für Rechnungspositionen
+   ============================================================ */
+
+// Berechnet Minuten zwischen zwei Uhrzeiten "HH:MM", behandelt Überschreitung über Mitternacht
+function minutesBetween(from, to){
+  if(!from||!to)return 0;
+  const [fh,fm]=from.split(':').map(n=>parseInt(n,10));
+  const [th,tm]=to.split(':').map(n=>parseInt(n,10));
+  if(isNaN(fh)||isNaN(fm)||isNaN(th)||isNaN(tm))return 0;
+  let mins=(th*60+tm)-(fh*60+fm);
+  if(mins<0) mins+=24*60; // über Mitternacht
+  return mins;
+}
+
+// Rundet Minuten auf das gewählte Raster
+function roundMinutes(mins, rasterMin, mode){
+  if(!rasterMin)return mins;
+  const blocks=mins/rasterMin;
+  let rounded;
+  if(mode==='up') rounded=Math.ceil(blocks);
+  else if(mode==='down') rounded=Math.floor(blocks);
+  else rounded=Math.round(blocks); // 'nearest'
+  return rounded*rasterMin;
+}
+
+function formatHours(mins){
+  const h=mins/60;
+  return h.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function openTimeDialog(itemIdx){
+  collectInvoiceDraft();
+  const item=state.invoiceDraft.items[itemIdx];
+  if(!item)return;
+  // Existierende Zeiteinträge laden oder eine leere Zeile
+  if(!Array.isArray(item.timeEntries) || !item.timeEntries.length){
+    item.timeEntries=[{date:todayISO(), from:'', to:'', breakMin:0, note:''}];
+  }
+  state._timeRasterMin=state._timeRasterMin||15;
+  state._timeRoundMode=state._timeRoundMode||'nearest';
+  state._timeItemIdx=itemIdx;
+  renderTimeDialog();
+}
+
+function renderTimeDialog(){
+  const idx=state._timeItemIdx;
+  const item=state.invoiceDraft.items[idx];
+  const entries=item.timeEntries||[];
+  const raster=state._timeRasterMin;
+  const mode=state._timeRoundMode;
+  // Summen berechnen
+  let totalGross=0, totalRounded=0;
+  const rows=entries.map((e,i)=>{
+    const grossMin=Math.max(0, minutesBetween(e.from, e.to)-(parseInt(e.breakMin,10)||0));
+    const roundedMin=roundMinutes(grossMin, raster, mode);
+    totalGross+=grossMin; totalRounded+=roundedMin;
+    return {entry:e, i, grossMin, roundedMin};
+  });
+  const modeLabel={'nearest':'kaufmännisch','up':'aufrunden','down':'abrunden'}[mode];
+  document.getElementById('time-dialog-root').innerHTML=`
+    <div class="modal-overlay" data-close-time-dialog style="z-index:50;background:rgba(20,16,8,0.55)">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+        <div class="modal-head">
+          <h2>Arbeitszeiten erfassen</h2>
+          <button class="modal-close" data-close-time-dialog>${ICON.close}</button>
+        </div>
+        <div style="font-size:13px;color:var(--ink-muted);margin-bottom:10px">
+          Gib eine oder mehrere Zeitspannen ein. Hankebuch summiert und rundet auf das gewählte Raster. Das Ergebnis ersetzt die Mengen-Angabe dieser Position und setzt die Einheit auf <strong>Std.</strong>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Raster</label>
+            <select id="time-raster">
+              <option value="5" ${raster===5?'selected':''}>5 Min.</option>
+              <option value="10" ${raster===10?'selected':''}>10 Min.</option>
+              <option value="15" ${raster===15?'selected':''}>15 Min. (Viertelstunde)</option>
+              <option value="30" ${raster===30?'selected':''}>30 Min. (halbe Std.)</option>
+              <option value="60" ${raster===60?'selected':''}>60 Min. (volle Std.)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Rundung</label>
+            <select id="time-mode">
+              <option value="nearest" ${mode==='nearest'?'selected':''}>Kaufmännisch</option>
+              <option value="up" ${mode==='up'?'selected':''}>Immer aufrunden</option>
+              <option value="down" ${mode==='down'?'selected':''}>Immer abrunden</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+          <div style="display:grid;grid-template-columns:100px 70px 70px 60px 1fr 30px;gap:4px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-muted);padding:0 2px">
+            <div>Datum</div><div>Von</div><div>Bis</div><div>Pause</div><div>Notiz</div><div></div>
+          </div>
+          ${rows.map(r=>`
+            <div style="display:grid;grid-template-columns:100px 70px 70px 60px 1fr 30px;gap:4px;align-items:center">
+              <input type="date" data-te="date" data-i="${r.i}" value="${escapeAttr(r.entry.date||'')}" style="padding:6px 4px;font-size:12px">
+              <input type="time" data-te="from" data-i="${r.i}" value="${escapeAttr(r.entry.from||'')}" step="60" style="padding:6px 4px;font-size:12px">
+              <input type="time" data-te="to" data-i="${r.i}" value="${escapeAttr(r.entry.to||'')}" step="60" style="padding:6px 4px;font-size:12px">
+              <input type="text" inputmode="numeric" data-te="breakMin" data-i="${r.i}" value="${r.entry.breakMin||''}" placeholder="0" title="Pause in Minuten" style="padding:6px 4px;font-size:12px;text-align:center">
+              <input type="text" data-te="note" data-i="${r.i}" value="${escapeAttr(r.entry.note||'')}" placeholder="z.B. Konzept Phase 1" style="padding:6px 8px;font-size:12px">
+              <button type="button" data-te-del="${r.i}" class="del-line" title="Zeile löschen" ${entries.length<=1?'disabled style="opacity:0.3"':''}>${ICON.close}</button>
+            </div>
+            <div style="font-size:11px;color:var(--ink-muted);padding-left:104px;margin-top:-2px">
+              ${r.grossMin>0?`${formatHours(r.grossMin)} Std. brutto`:'noch keine Zeit'}${r.grossMin>0&&r.roundedMin!==r.grossMin?` · gerundet ${formatHours(r.roundedMin)} Std.`:''}
+            </div>
+          `).join('')}
+        </div>
+
+        <button type="button" class="btn btn-sm" data-te-add style="margin-top:8px">+ Zeitspanne</button>
+
+        <div style="background:var(--bg-sunk);padding:12px;border-radius:8px;margin-top:14px;font-size:13px">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:4px">
+            <div style="color:var(--ink-muted)">Brutto-Summe</div>
+            <div class="num" style="font-variant-numeric:tabular-nums">${formatHours(totalGross)} Std.</div>
+            <div style="font-weight:600">Gerundet (${modeLabel}, ${raster} Min.)</div>
+            <div class="num" style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${formatHours(totalRounded)} Std.</div>
+          </div>
+        </div>
+
+        <label style="display:flex;gap:8px;align-items:center;padding:8px 0;font-size:13px;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="time-append-desc" ${state._timeAppendDesc?'checked':''}>
+          <span>Aufstellung an Beschreibung anhängen (Datum, von–bis)</span>
+        </label>
+
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn" data-close-time-dialog>Abbrechen</button>
+          <button class="btn btn-primary" style="flex:1" data-action="apply-time" ${totalRounded===0?'disabled':''}>${formatHours(totalRounded)} Std. übernehmen</button>
+        </div>
+      </div>
+    </div>
+  `;
+  bindTimeDialog();
+}
+
+function bindTimeDialog(){
+  document.querySelectorAll('[data-close-time-dialog]').forEach(el=>el.addEventListener('click',closeTimeDialog));
+  const raster=document.getElementById('time-raster');
+  if(raster)raster.addEventListener('change',()=>{state._timeRasterMin=parseInt(raster.value,10);saveTimeFieldsAndRerender();});
+  const mode=document.getElementById('time-mode');
+  if(mode)mode.addEventListener('change',()=>{state._timeRoundMode=mode.value;saveTimeFieldsAndRerender();});
+  document.querySelectorAll('[data-te]').forEach(el=>{
+    // Nur bei change (Verlassen des Felds) neu rendern, nicht bei input — damit
+    // der Fokus beim Tippen nicht verloren geht
+    el.addEventListener('change',()=>{updateTimeEntryFromInput(el);renderTimeDialog();});
+    // Eingabe-Werte trotzdem direkt in state schreiben, ohne Re-Render
+    el.addEventListener('input',()=>{updateTimeEntryFromInput(el);});
+  });
+  document.querySelectorAll('[data-te-del]').forEach(el=>el.addEventListener('click',()=>{
+    const i=parseInt(el.dataset.teDel,10);
+    const item=state.invoiceDraft.items[state._timeItemIdx];
+    if(item.timeEntries.length<=1)return;
+    item.timeEntries.splice(i,1);
+    renderTimeDialog();
+  }));
+  const addBtn=document.querySelector('[data-te-add]');
+  if(addBtn)addBtn.addEventListener('click',()=>{
+    saveTimeFieldsAndRerender();
+    const item=state.invoiceDraft.items[state._timeItemIdx];
+    // Default-Datum: letztes verwendetes Datum oder heute
+    const lastDate=item.timeEntries[item.timeEntries.length-1]?.date||todayISO();
+    item.timeEntries.push({date:lastDate, from:'', to:'', breakMin:0, note:''});
+    renderTimeDialog();
+  });
+  const appendChk=document.getElementById('time-append-desc');
+  if(appendChk)appendChk.addEventListener('change',()=>{state._timeAppendDesc=appendChk.checked;});
+  // Apply-Action
+  document.querySelectorAll('[data-action="apply-time"]').forEach(el=>el.addEventListener('click',applyTimeToItem));
+}
+
+function updateTimeEntryFromInput(el){
+  const i=parseInt(el.dataset.i,10);
+  const key=el.dataset.te;
+  const item=state.invoiceDraft.items[state._timeItemIdx];
+  if(!item.timeEntries[i])return;
+  let val=el.value;
+  if(key==='breakMin') val=parseInt(val,10)||0;
+  item.timeEntries[i][key]=val;
+}
+
+function saveTimeFieldsAndRerender(){
+  // Liest die aktuellen Werte aus den Inputs zurück in state, BEVOR neu gerendert wird
+  document.querySelectorAll('[data-te]').forEach(el=>updateTimeEntryFromInput(el));
+}
+
+function closeTimeDialog(){
+  document.getElementById('time-dialog-root').innerHTML='';
+}
+
+function applyTimeToItem(){
+  saveTimeFieldsAndRerender();
+  const idx=state._timeItemIdx;
+  const item=state.invoiceDraft.items[idx];
+  if(!item)return;
+  const raster=state._timeRasterMin;
+  const mode=state._timeRoundMode;
+  let totalRounded=0;
+  const lines=[];
+  (item.timeEntries||[]).forEach(e=>{
+    const grossMin=Math.max(0, minutesBetween(e.from, e.to)-(parseInt(e.breakMin,10)||0));
+    if(grossMin<=0)return;
+    const roundedMin=roundMinutes(grossMin, raster, mode);
+    totalRounded+=roundedMin;
+    const datePart=e.date?fmtDate(e.date):'';
+    const timePart=`${e.from}–${e.to}`;
+    const breakPart=(parseInt(e.breakMin,10)||0)>0?` (−${e.breakMin} min Pause)`:'';
+    const notePart=e.note?` · ${e.note}`:'';
+    lines.push(`${datePart} ${timePart}${breakPart}${notePart} = ${formatHours(roundedMin)} Std.`);
+  });
+  const totalHours=totalRounded/60;
+  // Menge setzen
+  item.qty=Math.round(totalHours*100)/100;
+  item.unit='Std.';
+  // Beschreibung anhängen wenn gewünscht
+  if(state._timeAppendDesc && lines.length){
+    const existing=(item.description||'').trim();
+    item.description=(existing?existing+'\n\n':'')+lines.join('\n');
+  }
+  closeTimeDialog();
+  renderInvoiceModal();
+}
 
 function showTestInvoice(){
   const fake={id:'test',number:nextInvoiceNumber(),invoiceDate:todayISO(),serviceDate:todayISO(),dueDate:addDays(todayISO(),14),
