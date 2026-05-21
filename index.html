@@ -1104,6 +1104,7 @@ function renderInvoiceModal(){
           </div>
           <div class="divider">Kunde</div>
           <div class="field"><label>Name / Firma</label><input type="text" id="cust-name" value="${escapeAttr(inv.customer.name)}" placeholder="z. B. Müller GmbH"></div>
+          <div class="field"><label>Produktion (optional)</label><input type="text" id="cust-production" value="${escapeAttr(inv.customer.production||'')}" placeholder="z. B. Tatort - Folge 42"><div class="hint">Wird unter dem Firmennamen auf der Rechnung angezeigt</div></div>
           <div class="field"><label>Straße & Nr.</label><input type="text" id="cust-street" value="${escapeAttr(inv.customer.street)}"></div>
           <div class="field-row">
             <div class="field"><label>PLZ</label><input type="text" id="cust-zip" value="${escapeAttr(inv.customer.zip)}"></div>
@@ -1258,6 +1259,7 @@ function collectInvoiceDraft(){
   inv.dueDate=document.getElementById('inv-due').value;
   inv.customer={
     name:document.getElementById('cust-name').value.trim(),
+    production:(document.getElementById('cust-production')?.value||'').trim(),
     street:document.getElementById('cust-street').value.trim(),
     zip:document.getElementById('cust-zip').value.trim(),
     city:document.getElementById('cust-city').value.trim(),
@@ -1389,6 +1391,7 @@ function renderInvoicePdfHTML(inv){
         <div class="pdf-addr">
           <div class="sender-line">${escapeHtml(senderLine)}</div>
           <div style="font-weight:600">${escapeHtml(inv.customer.name)}</div>
+          ${inv.customer.production?`<div>${escapeHtml(inv.customer.production)}</div>`:''}
           <div>${escapeHtml(inv.customer.street)}</div>
           <div>${escapeHtml(inv.customer.zip)} ${escapeHtml(inv.customer.city)}</div>
           ${inv.customer.country&&inv.customer.country!=='Deutschland'?`<div>${escapeHtml(inv.customer.country)}</div>`:''}
@@ -1477,6 +1480,7 @@ function renderInvoicePdfHankemacht(inv){
 
       <div class="hm-recipient">
         <div style="font-weight:600">${escapeHtml(inv.customer.name||'')}</div>
+        ${inv.customer.production?`<div>${escapeHtml(inv.customer.production)}</div>`:''}
         <div>${escapeHtml(inv.customer.street||'')}</div>
         <div>${escapeHtml(inv.customer.zip||'')} ${escapeHtml(inv.customer.city||'')}</div>
         ${inv.customer.country&&inv.customer.country!=='Deutschland'?`<div>${escapeHtml(inv.customer.country)}</div>`:''}
