@@ -890,6 +890,7 @@ function renderView(){
 
 function renderDashboard(){
   const now=new Date();const cm=now.getMonth();const cy=now.getFullYear();
+  const today=todayISO();
   const q=quoteOfTheDay();
   const monthTx=state.transactions.filter(t=>{const[y,m]=t.date.split('-').map(Number);return y===cy&&(m-1)===cm;});
   const yearTx=state.transactions.filter(t=>t.date.startsWith(String(state.year)));
@@ -901,7 +902,26 @@ function renderDashboard(){
   const recent=[...state.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   const ust=calcVatBalance(yearTx);
   const showNudge=shouldShowReminderNudge();
-  const openInv=state.invoices.filter(i=>i.status==='sent').length;
+
+  // Offene Rechnungen (status sent oder draft, aber nicht paid)
+  const openInvoices=state.invoices.filter(i=>i.status!=='paid');
+  const openSentInvoices=openInvoices.filter(i=>i.status==='sent');
+  const totalOpen=round2(openSentInvoices.reduce((s,i)=>s+(i.totalGross||0),0));
+  const overdueInvoices=openSentInvoices.filter(i=>i.dueDate && i.dueDate<today);
+  const totalOverdue=round2(overdueInvoices.reduce((s,i)=>s+(i.totalGross||0),0));
+  const openInv=openSentInvoices.length;
+  // Nächster anstehender ZM-Termin (in 30 Tagen)
+  const upcomingZM=(()=>{
+    const allDeadlines=generateDeadlines(state.year,state.settings);
+    const zmDeadlines=allDeadlines.filter(d=>d.title.startsWith('Zusammenfassende Meldung'));
+    const fut=zmDeadlines.filter(d=>d.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
+    if(!fut.length)return null;
+    const days=daysBetween(today, fut[0].date);
+    if(days>30)return null;
+    return {date:fut[0].date, title:fut[0].title, desc:fut[0].description, days};
+  })();
+  // Nächste erwartete Eingänge sortiert nach Fälligkeit
+  const upcoming=[...openSentInvoices].sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')).slice(0,6);
 
   return `
     <div class="greeting">
@@ -910,6 +930,14 @@ function renderDashboard(){
     </div>
     <div class="quote-card"><div class="eyebrow">Gedanke des Tages</div>
       <blockquote>${escapeHtml(q.text)}</blockquote><cite>${escapeHtml(q.author)}</cite></div>
+    ${upcomingZM?`<div class="nudge" style="background:rgba(184,154,90,0.12);border-color:rgba(184,154,90,0.4)">
+      <div class="icon">📋</div>
+      <div class="text">
+        <div class="t">${escapeHtml(upcomingZM.title)} – Frist in ${upcomingZM.days} Tag${upcomingZM.days===1?'':'en'}</div>
+        <div class="s">Abgabe bis ${fmtDate(upcomingZM.date)} über BZSt-Online (bop.bzst.bund.de) oder ELSTER. Die Daten findest du in der Statistik.</div>
+      </div>
+      <button class="btn btn-sm" data-view-goto="stats">ZM-Daten ansehen</button>
+    </div>`:''}
     ${showNudge?`<div class="nudge"><div class="icon">📝</div><div class="text"><div class="t">Zeit für deine Buchführung</div><div class="s">Trag die letzten zwei Wochen ein, bevor sich der Berg auftürmt.</div></div><button class="btn btn-sm btn-primary" data-action="new-income">Los geht's</button></div>`:''}
     <div class="section-title">Dieser Monat · ${monthName(cm)}</div>
     <div class="kpi-grid">
@@ -922,6 +950,34 @@ function renderDashboard(){
       <button class="quick expense" data-action="new-expense"><span class="plus">+</span><span class="t">Ausgabe</span><span class="s">Beleg, Einkauf …</span></button>
       <button class="quick invoice" data-action="new-invoice"><span class="plus">📄</span><span class="t">Rechnung schreiben</span><span class="s">${openInv?openInv+' offen':'PDF erzeugen'}</span></button>
     </div>
+    ${openSentInvoices.length?`<div class="card" style="margin-top:14px"><div class="section-title">Voraussichtlicher Zahlungseingang
+        <button class="btn btn-ghost btn-sm" data-view-goto="invoices">alle Rechnungen</button></div>
+      <div style="display:grid;grid-template-columns:${totalOverdue>0?'1fr 1fr':'1fr'};gap:10px;margin-bottom:14px">
+        <div style="background:var(--bg-sunk);padding:12px;border-radius:8px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-muted)">Offene Rechnungen</div>
+          <div class="num" style="font-size:22px;font-weight:600;margin-top:4px;color:var(--green)">${fmtEUR(totalOpen)}</div>
+          <div style="font-size:12px;color:var(--ink-muted);margin-top:2px">${openSentInvoices.length} Rechnung${openSentInvoices.length===1?'':'en'}</div>
+        </div>
+        ${totalOverdue>0?`<div style="background:rgba(174,78,47,0.08);padding:12px;border-radius:8px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--terra)">⚠ Überfällig</div>
+          <div class="num" style="font-size:22px;font-weight:600;margin-top:4px;color:var(--terra)">${fmtEUR(totalOverdue)}</div>
+          <div style="font-size:12px;color:var(--terra);margin-top:2px">${overdueInvoices.length} Rechnung${overdueInvoices.length===1?'':'en'}</div>
+        </div>`:''}
+      </div>
+      <div class="list" style="font-size:13.5px">${upcoming.map(i=>{
+        const overdue=i.dueDate&&i.dueDate<today;
+        const dueTxt=i.dueDate?(overdue?`<span style="color:var(--terra);font-weight:600">überfällig seit ${fmtDate(i.dueDate)}</span>`:`fällig am ${fmtDate(i.dueDate)}`):'<span style="color:var(--ink-muted)">ohne Fälligkeitsdatum</span>';
+        return `<div class="tx-item" data-edit-invoice="${i.id}" style="cursor:pointer">
+          <div class="tx-dot" style="background:${overdue?'var(--terra)':'var(--gold)'}"></div>
+          <div class="tx-main">
+            <div class="tx-desc">${escapeHtml(i.number)} · ${escapeHtml(i.customer?.name||'')}</div>
+            <div class="tx-meta">${dueTxt}</div>
+          </div>
+          <div class="tx-amount">${fmtEUR(i.totalGross||0)}<span class="sub">brutto</span></div>
+        </div>`;
+      }).join('')}</div>
+      ${openSentInvoices.length>upcoming.length?`<div style="font-size:12px;color:var(--ink-muted);margin-top:8px;text-align:center">+ ${openSentInvoices.length-upcoming.length} weitere offene Rechnungen im Rechnungen-Tab</div>`:''}
+    </div>`:''}
     ${!state.settings.kleinunternehmer?`<div class="card"><div class="section-title">USt-Status Jahr ${state.year}</div>
       <div class="row">
         <div><div style="font-size:13px;color:var(--ink-muted)">Vereinnahmte USt</div><div class="num" style="font-size:17px;margin-top:2px">${fmtEUR(ust.collected)}</div></div>
@@ -1005,13 +1061,19 @@ function renderTxItem(t){
 function renderInvoiceList(){
   const yearInv=state.invoices.filter(i=>(i.invoiceDate||'').startsWith(String(state.year)));
   const sorted=[...yearInv].sort((a,b)=>(b.invoiceDate||'').localeCompare(a.invoiceDate||''));
+  const today=todayISO();
   const open=sorted.filter(i=>i.status==='sent');
+  const overdue=open.filter(i=>i.dueDate && i.dueDate<today);
+  const onTime=open.filter(i=>!i.dueDate||i.dueDate>=today);
   const paid=sorted.filter(i=>i.status==='paid');
   const draft=sorted.filter(i=>i.status==='draft');
   const totalPaid=round2(paid.reduce((s,i)=>s+(i.totalGross||0),0));
   const totalOpen=round2(open.reduce((s,i)=>s+(i.totalGross||0),0));
+  const totalOverdue=round2(overdue.reduce((s,i)=>s+(i.totalGross||0),0));
   const totalSent=round2(sorted.filter(i=>i.status!=='draft').reduce((s,i)=>s+(i.totalGross||0),0));
   const stammdatenOk=state.settings.ownerName&&state.settings.street&&state.settings.zip&&state.settings.city&&(state.settings.taxNumber||state.settings.vatId);
+  // Sortiere offene nach Fälligkeit (älteste/überfälligste zuerst)
+  const openSorted=[...open].sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
   return `
     <div class="row" style="margin-bottom:16px">
       <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>Rechnungen</b> ${state.year}</h1>
@@ -1021,22 +1083,26 @@ function renderInvoiceList(){
       <div class="text"><div class="t">Stammdaten unvollständig</div><div class="s">Für rechtskonforme Rechnungen brauchst du Name, Adresse und Steuer- oder USt-IdNr.</div></div>
       <button class="btn btn-sm btn-primary" data-open-settings="invoice">Einstellungen</button></div>`:''}
     <div class="kpi-grid">
+      <div class="kpi"><div class="k-label">Offen</div><div class="k-value" style="color:var(--gold)">${fmtEUR(totalOpen)}</div><div class="k-sub">${open.length} versendet${overdue.length?`<br><span style="color:var(--terra)">davon ${overdue.length} überfällig (${fmtEUR(totalOverdue)})</span>`:''}</div></div>
       <div class="kpi"><div class="k-label">Bezahlt</div><div class="k-value" style="color:var(--green)">${fmtEUR(totalPaid)}</div><div class="k-sub">${paid.length} Rechnungen</div></div>
-      <div class="kpi"><div class="k-label">Offen</div><div class="k-value" style="color:var(--gold)">${fmtEUR(totalOpen)}</div><div class="k-sub">${open.length} versendet</div></div>
       <div class="kpi"><div class="k-label">Gesamt fakturiert</div><div class="k-value">${fmtEUR(totalSent)}</div><div class="k-sub">brutto, ohne Entwürfe</div></div>
     </div>
     ${draft.length?`<div class="card"><div class="section-title">Entwürfe (${draft.length})</div><div class="list">${draft.map(renderInvRow).join('')}</div></div>`:''}
-    <div class="card"><div class="section-title">Alle Rechnungen ${state.year}</div>
-      ${sorted.filter(i=>i.status!=='draft').length?`<div class="list">${sorted.filter(i=>i.status!=='draft').map(renderInvRow).join('')}</div>`:`<div class="empty"><div class="big">Noch keine Rechnungen.</div><div class="small">Schreib deine erste mit dem Knopf oben.</div></div>`}
+    ${open.length?`<div class="card"><div class="section-title">Offene Rechnungen (${open.length}) · sortiert nach Fälligkeit</div><div class="list">${openSorted.map(renderInvRow).join('')}</div></div>`:''}
+    <div class="card"><div class="section-title">${open.length?'Bezahlte Rechnungen':'Alle Rechnungen'} ${state.year}</div>
+      ${paid.length?`<div class="list">${paid.map(renderInvRow).join('')}</div>`:open.length?'<div class="empty"><div class="small">Noch keine bezahlten Rechnungen.</div></div>':`<div class="empty"><div class="big">Noch keine Rechnungen.</div><div class="small">Schreib deine erste mit dem Knopf oben.</div></div>`}
     </div>`;
 }
 function renderInvRow(i){
   const wooBadge=i.wooOrderId?` <span style="display:inline-block;padding:1px 6px;background:#96588a14;color:#96588a;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.04em;margin-left:4px;vertical-align:1px">WC</span>`:'';
+  const today=todayISO();
+  const isOverdue=i.status==='sent' && i.dueDate && i.dueDate<today;
+  const dueText=i.dueDate?(isOverdue?`<span style="color:var(--terra);font-weight:600">überfällig seit ${fmtDate(i.dueDate)}</span>`:`fällig ${fmtDate(i.dueDate)}`):'';
   return `<div class="inv-row" data-edit-invoice="${i.id}">
     <div>
-      <div class="inv-num">${escapeHtml(i.number||'(neu)')}${wooBadge}</div>
+      <div class="inv-num">${escapeHtml(i.number||'(neu)')}${wooBadge}${isOverdue?' <span style="display:inline-block;padding:1px 6px;background:rgba(174,78,47,0.15);color:var(--terra);border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.04em;margin-left:4px;vertical-align:1px">ÜBERFÄLLIG</span>':''}</div>
       <div class="inv-customer">${escapeHtml(i.customer?.name||'—')}</div>
-      <div class="inv-meta">${fmtDate(i.invoiceDate||todayISO())}${i.dueDate?` · fällig ${fmtDate(i.dueDate)}`:''}</div>
+      <div class="inv-meta">${fmtDate(i.invoiceDate||todayISO())}${dueText?` · ${dueText}`:''}</div>
     </div>
     <div class="inv-amount">${fmtEUR(i.totalGross||0)}</div>
     <div class="inv-status ${i.status||'draft'}">${({draft:'Entwurf',sent:'Versendet',paid:'Bezahlt'}[i.status||'draft'])}</div>
@@ -1162,6 +1228,20 @@ function renderInvoiceModal(){
             <span class="switch"></span>
             <span class="label"><div class="t">Kleinunternehmer-Hinweis (§19 UStG)</div><div class="sub">"Gemäß §19 UStG wird keine Umsatzsteuer berechnet."</div></span>
           </label>`:''}
+          <div class="field">
+            <label class="toggle" style="padding:4px 0">
+              <input type="checkbox" id="inv-revcharge" ${inv.reverseCharge?'checked':''}>
+              <span class="switch"></span>
+              <span class="label"><div class="t">Reverse Charge (B2B EU-Ausland)</div><div class="sub">Sonstige Leistung an Unternehmer im EU-Ausland nach §13b/§3a Abs. 2 UStG. USt wird auf 0 % gesetzt, Pflichthinweis erscheint auf der Rechnung.</div></span>
+            </label>
+          </div>
+          <div id="inv-revcharge-fields" style="${inv.reverseCharge?'':'display:none'}background:var(--bg-sunk);padding:10px 12px;border-radius:8px;margin-top:6px">
+            <div class="hint" style="margin-bottom:8px"><strong>Wichtig:</strong> Beide USt-IdNrn müssen vorhanden sein. Du musst diesen Umsatz in deiner Zusammenfassenden Meldung (ZM) ans BZSt melden.</div>
+            <div class="field"><label>USt-IdNr. des Kunden *</label>
+              <input type="text" id="inv-revcharge-vatid" value="${escapeAttr(inv.customer?.vatId||'')}" placeholder="z.B. ATU12345678">
+              <div class="hint">Wird in den Kundenblock übernommen und auf der Rechnung ausgewiesen.</div>
+            </div>
+          </div>
           <div class="inv-totals">
             <div class="tot-row"><span>Zwischensumme (netto)</span><span class="num">${fmtEUR(totals.totalNet)}</span></div>
             ${totals.vatBreakdown.map(v=>`<div class="tot-row"><span>USt ${v.rate}% auf ${fmtEUR(v.base)}</span><span class="num">${fmtEUR(v.vat)}</span></div>`).join('')}
@@ -1233,6 +1313,27 @@ function bindInvoiceForm(){
       if(box) box.style.display=rightsEn.checked?'':'none';
     });
   }
+  // Reverse-Charge-Checkbox: Felder ein-/ausblenden + USt-Sätze auf 0% setzen
+  const rcEn=document.getElementById('inv-revcharge');
+  if(rcEn){
+    rcEn.addEventListener('change',()=>{
+      const box=document.getElementById('inv-revcharge-fields');
+      if(box) box.style.display=rcEn.checked?'block':'none';
+      if(rcEn.checked){
+        // Alle Positionen auf 0% USt setzen (Reverse-Charge-Logik)
+        collectInvoiceDraft();
+        state.invoiceDraft.reverseCharge=true;
+        state.invoiceDraft.items.forEach(it=>{it.vatRate=0;});
+        renderInvoiceModal();
+      } else {
+        collectInvoiceDraft();
+        state.invoiceDraft.reverseCharge=false;
+        // USt-Sätze wieder auf Default — Nutzer kann manuell anpassen
+        state.invoiceDraft.items.forEach(it=>{if(it.vatRate===0)it.vatRate=state.settings.defaultVatRate;});
+        renderInvoiceModal();
+      }
+    });
+  }
   document.querySelectorAll('[data-del-item]').forEach(b=>b.addEventListener('click',e=>{
     const idx=parseInt(b.dataset.delItem);
     collectInvoiceDraft();
@@ -1273,6 +1374,16 @@ function collectInvoiceDraft(){
   inv.footerNote=document.getElementById('inv-footer').value;
   const rightsEl=document.getElementById('inv-rights'); if(rightsEl) inv.rightsTransfer=rightsEl.value;
   const rightsEn=document.getElementById('inv-rights-enabled'); if(rightsEn) inv.rightsEnabled=rightsEn.checked;
+  const rcEn=document.getElementById('inv-revcharge'); if(rcEn) inv.reverseCharge=rcEn.checked;
+  const rcVatId=document.getElementById('inv-revcharge-vatid');
+  if(rcVatId){
+    // Synchronisiere die USt-IdNr des Kunden mit dem Reverse-Charge-Feld
+    const v=rcVatId.value.trim();
+    if(v){
+      inv.customer=inv.customer||{};
+      inv.customer.vatId=v;
+    }
+  }
   const rightsCo=document.getElementById('inv-rights-company'); if(rightsCo) inv.rightsProductionCompany=rightsCo.value;
   const rightsPr=document.getElementById('inv-rights-production'); if(rightsPr) inv.rightsProductionName=rightsPr.value;
   const k=document.getElementById('inv-klein');
@@ -1395,6 +1506,7 @@ function renderInvoicePdfHTML(inv){
           <div>${escapeHtml(inv.customer.street)}</div>
           <div>${escapeHtml(inv.customer.zip)} ${escapeHtml(inv.customer.city)}</div>
           ${inv.customer.country&&inv.customer.country!=='Deutschland'?`<div>${escapeHtml(inv.customer.country)}</div>`:''}
+          ${inv.customer.vatId?`<div style="margin-top:4px;font-size:9pt">USt-IdNr.: ${escapeHtml(inv.customer.vatId)}</div>`:''}
         </div>
         <div class="pdf-meta">
           <div style="text-align:right;font-size:9pt;color:#666;margin-bottom:8px">${escapeHtml(s.city)}, den ${fmtDate(inv.invoiceDate)}</div>
@@ -1437,6 +1549,7 @@ function renderInvoicePdfHTML(inv){
         </table>
       </div>
       ${klein?`<p class="pdf-text" style="font-size:9pt;color:#444"><i>Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.</i></p>`:''}
+      ${inv.reverseCharge?`<div class="pdf-text" style="margin-top:14px;padding:10px 12px;background:#f4efe2;border-left:3px solid #b89a5a;font-size:10pt;line-height:1.5"><strong>Steuerschuldnerschaft des Leistungsempfängers / Reverse charge</strong><br>Gemäß § 13b UStG geht die Steuerschuldnerschaft auf den Leistungsempfänger über. Die Rechnung wird ohne Umsatzsteuer ausgewiesen.${s.vatId?`<br>USt-IdNr. Leistungserbringer: ${escapeHtml(s.vatId)}`:''}${inv.customer?.vatId?`<br>USt-IdNr. Leistungsempfänger: ${escapeHtml(inv.customer.vatId)}`:''}</div>`:''}
       ${(function(){const rt=resolveRightsTransferText(inv); return rt?`<div class="pdf-text" style="margin-top:18px;font-size:9.5pt;line-height:1.5"><strong>Rechteübertragung</strong><br>${escapeHtml(rt).replace(/\n/g,'<br>')}</div>`:'';})()}
       ${inv.paymentTerms?`<p class="pdf-text">${escapeHtml(inv.paymentTerms).replace(/\n/g,'<br>')}${inv.dueDate?`<br><strong>Zahlbar bis ${fmtDate(inv.dueDate)}</strong>`:''}</p>`:''}
       ${s.iban?`<p class="pdf-text" style="font-size:9.5pt"><strong>Bankverbindung:</strong> ${escapeHtml(s.bankName||'')} · IBAN ${escapeHtml(s.iban)}${s.bic?` · BIC ${escapeHtml(s.bic)}`:''}<br>Verwendungszweck: ${escapeHtml(inv.number)}</p>`:''}
@@ -1484,6 +1597,7 @@ function renderInvoicePdfHankemacht(inv){
         <div>${escapeHtml(inv.customer.street||'')}</div>
         <div>${escapeHtml(inv.customer.zip||'')} ${escapeHtml(inv.customer.city||'')}</div>
         ${inv.customer.country&&inv.customer.country!=='Deutschland'?`<div>${escapeHtml(inv.customer.country)}</div>`:''}
+        ${inv.customer.vatId?`<div style="margin-top:4px;font-size:9pt">USt-IdNr.: ${escapeHtml(inv.customer.vatId)}</div>`:''}
       </div>
 
       <h1 class="hm-h1">RECHNUNG</h1>
@@ -1521,6 +1635,8 @@ function renderInvoicePdfHankemacht(inv){
         `:`<tr><td colspan="4" style="padding-top:10px;font-size:9pt;font-style:italic">Gemäß §19 UStG wird keine Umsatzsteuer berechnet.</td></tr>`}
         </tbody>
       </table>
+
+      ${inv.reverseCharge?`<div style="margin-top:14px;padding:10px 12px;background:#f4efe2;border-left:3px solid #b89a5a;font-size:10pt;line-height:1.5;font-family:'Calibri',sans-serif"><strong>Steuerschuldnerschaft des Leistungsempfängers / Reverse charge</strong><br>Gemäß § 13b UStG geht die Steuerschuldnerschaft auf den Leistungsempfänger über. Die Rechnung wird ohne Umsatzsteuer ausgewiesen.${s.vatId?`<br>USt-IdNr. Leistungserbringer: ${escapeHtml(s.vatId)}`:''}${inv.customer?.vatId?`<br>USt-IdNr. Leistungsempfänger: ${escapeHtml(inv.customer.vatId)}`:''}</div>`:''}
 
       ${(function(){const rt=resolveRightsTransferText(inv); return rt?`<div class="hm-rights"><strong>Rechteübertragung</strong><br>${escapeHtml(rt).replace(/\n/g,'<br>')}</div>`:'';})()}
 
@@ -1580,7 +1696,8 @@ function vatCategoryCode(rate, isKleinunternehmer){
   return 'Z';
 }
 
-function vatExemptionReason(isKleinunternehmer){
+function vatExemptionReason(isKleinunternehmer, isReverseCharge){
+  if(isReverseCharge) return 'Reverse charge - Steuerschuldnerschaft des Leistungsempfängers nach §13b UStG';
   if(isKleinunternehmer) return 'Kleinunternehmer gemäß §19 UStG';
   return '';
 }
@@ -1599,9 +1716,12 @@ function buildXRechnungUBL(inv){
   const buyerCountry=(c.country||'DE').toUpperCase().slice(0,2);
 
   // USt-Aufschlüsselung gruppiert
+  const rc=!!inv.reverseCharge;
   const taxSubtotals=klein
     ? [{rate:0,base:totals.totalNet,vat:0,categoryCode:'E'}]
-    : (totals.vatBreakdown.length
+    : rc
+      ? [{rate:0,base:totals.totalNet,vat:0,categoryCode:'AE'}]
+      : (totals.vatBreakdown.length
         ? totals.vatBreakdown.map(v=>({rate:v.rate,base:v.base,vat:v.vat,categoryCode:'S'}))
         : [{rate:0,base:totals.totalNet,vat:0,categoryCode:'Z'}]);
 
@@ -1713,7 +1833,7 @@ function buildXRechnungUBL(inv){
       <cac:TaxCategory>
         <cbc:ID>${t.categoryCode}</cbc:ID>
         <cbc:Percent>${t.rate.toFixed(2)}</cbc:Percent>
-        ${t.categoryCode==='E'?`<cbc:TaxExemptionReason>${xmlEscape(vatExemptionReason(klein))}</cbc:TaxExemptionReason>`:''}
+        ${t.categoryCode==='E'||t.categoryCode==='AE'?`<cbc:TaxExemptionReason>${xmlEscape(vatExemptionReason(klein, rc))}</cbc:TaxExemptionReason>`:''}
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>`).join('')}
@@ -1727,8 +1847,8 @@ function buildXRechnungUBL(inv){
   </cac:LegalMonetaryTotal>
 
 ${(totals.lines||[]).map((l,idx)=>{
-  const rate=klein?0:l.rate;
-  const cat=klein?'E':(rate>0?'S':'Z');
+  const rate=klein||rc?0:l.rate;
+  const cat=klein?'E':rc?'AE':(rate>0?'S':'Z');
   const desc=l.description||'Position';
   return `  <cac:InvoiceLine>
     <cbc:ID>${idx+1}</cbc:ID>
@@ -2122,7 +2242,7 @@ function exportUstVoranmeldung(year){
   rows.push(['Steuernummer',state.settings.taxNumber||'']);
   rows.push(['USt-IdNr.',state.settings.vatId||'']);
   rows.push([]);
-  rows.push(['Zeitraum','Bemessungsgrundlage 19% (netto)','USt 19%','Bemessungsgrundlage 7% (netto)','USt 7%','Steuerfreie Umsätze (0%)','USt gesamt','Vorsteuer 19%','Vorsteuer 7%','Vorsteuer gesamt','Zahllast / Erstattung','Abgabefrist']);
+  rows.push(['Zeitraum','Bemessungsgrundlage 19% (netto)','USt 19%','Bemessungsgrundlage 7% (netto)','USt 7%','Steuerfreie Umsätze (0%)','Innergem. sonstige Leistungen Kz 21 (netto)','USt gesamt','Vorsteuer 19%','Vorsteuer 7%','Vorsteuer gesamt','Zahllast / Erstattung','Abgabefrist']);
 
   // Hilfsfunktion: gibt das Breakdown einer Transaktion zurück (immer als Array, auch bei Single-USt)
   const tBreakdown=t=>{
@@ -2149,6 +2269,20 @@ function exportUstVoranmeldung(year){
     const base7=sumByRate(inc,7);
     const vat7=sumVatByRate(inc,7);
     const base0=sumByRate(inc,0);
+    // Reverse-Charge: Bezahlte Rechnungen mit reverseCharge==true, deren Bezahldatum im Zeitraum liegt
+    const rcInvoices=state.invoices.filter(invX=>{
+      if(!invX.reverseCharge||invX.status!=='paid')return false;
+      // Verknüpfte Einnahme finden, deren Datum prüfen
+      if(invX.txId){
+        const tx=state.transactions.find(t=>t.id===invX.txId);
+        return tx && tx.date.startsWith(String(year)) && p.filter(tx);
+      }
+      // Fallback: Rechnungsdatum
+      const d=invX.invoiceDate||'';
+      if(!d.startsWith(String(year)))return false;
+      return p.filter({date:d});
+    });
+    const baseRC=round2(rcInvoices.reduce((s,i)=>s+(i.totalNet||i.totalGross||0),0));
     const collected=round2(vat19+vat7);
     const paid19=sumVatByRate(exp,19);
     const paid7=sumVatByRate(exp,7);
@@ -2164,13 +2298,13 @@ function exportUstVoranmeldung(year){
       const q=parseInt(p.key.slice(-1));const dueMonths={1:[4,year],2:[7,year],3:[10,year],4:[1,year+1]};
       due=`10.${String(dueMonths[q][0]).padStart(2,'0')}.${dueMonths[q][1]}`;
     }
-    rows.push([p.label,toCsvNum(base19),toCsvNum(vat19),toCsvNum(base7),toCsvNum(vat7),toCsvNum(base0),toCsvNum(collected),toCsvNum(paid19),toCsvNum(paid7),toCsvNum(paid),toCsvNum(balance),due]);
+    rows.push([p.label,toCsvNum(base19),toCsvNum(vat19),toCsvNum(base7),toCsvNum(vat7),toCsvNum(base0),toCsvNum(baseRC),toCsvNum(collected),toCsvNum(paid19),toCsvNum(paid7),toCsvNum(paid),toCsvNum(balance),due]);
   });
   rows.push([]);
-  rows.push(['Jahressumme','','','','','',toCsvNum(totalCollected),'','',toCsvNum(totalPaid),toCsvNum(totalCollected-totalPaid),'']);
+  rows.push(['Jahressumme','','','','','','',toCsvNum(totalCollected),'','',toCsvNum(totalPaid),toCsvNum(totalCollected-totalPaid),'']);
   rows.push([]);
   rows.push(['Hinweis: Diese Werte sind als Ausgangsmaterial für die ELSTER-Voranmeldung gedacht.']);
-  rows.push(['Sie ersetzen NICHT die Einreichung über ELSTER.']);
+  rows.push(['Sie ersetzen NICHT die Einreichung über ELSTER. Reverse-Charge-Umsätze müssen zusätzlich in der Zusammenfassenden Meldung (ZM) ans BZSt gemeldet werden.']);
   const csv=rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
   download(`ust_voranmeldung_${year}.csv`,'\uFEFF'+csv,'text/csv;charset=utf-8');
 }
@@ -3185,6 +3319,35 @@ function renderStats(){
   const vendorTotalCommission=round2(vendorStats.reduce((s,v)=>s+v.commission,0));
   const vendorTotalOpen=round2(vendorStats.reduce((s,v)=>s+v.openPayoutGross,0));
   const maxVendorSale=vendorStats[0]?.grossSales||1;
+
+  // Reverse-Charge / ZM-Vorbereitung
+  const rcInvoices=state.invoices.filter(i=>i.reverseCharge && (i.invoiceDate||'').startsWith(String(state.year)));
+  const rcByQuarter={1:[],2:[],3:[],4:[]};
+  rcInvoices.forEach(i=>{
+    // Datum: bei bezahlten Rechnungen das Zahlungsdatum, sonst das Rechnungsdatum
+    let refDate=i.invoiceDate||'';
+    if(i.status==='paid'&&i.txId){
+      const tx=state.transactions.find(t=>t.id===i.txId);
+      if(tx)refDate=tx.date;
+    }
+    const q=quarterOf(refDate);
+    if(q&&rcByQuarter[q])rcByQuarter[q].push({inv:i,refDate});
+  });
+  // Pro Quartal die USt-IdNrn aggregieren
+  const rcQuarterStats=[1,2,3,4].map(q=>{
+    const items=rcByQuarter[q];
+    if(!items.length)return null;
+    const byVatId={};
+    items.forEach(({inv})=>{
+      const vid=(inv.customer?.vatId||'').replace(/\s/g,'').toUpperCase()||'(ohne USt-IdNr.)';
+      const name=inv.customer?.name||'';
+      if(!byVatId[vid])byVatId[vid]={vatId:vid,name,total:0,count:0,invoices:[]};
+      byVatId[vid].total+=(inv.totalNet||inv.totalGross||0);
+      byVatId[vid].count++;
+      byVatId[vid].invoices.push(inv.number);
+    });
+    return {q, items:Object.values(byVatId).map(x=>({...x,total:round2(x.total)})).sort((a,b)=>b.total-a.total), total:round2(items.reduce((s,x)=>s+(x.inv.totalNet||x.inv.totalGross||0),0))};
+  }).filter(Boolean);
   return `
     <div class="row" style="margin-bottom:6px">
       <h1 style="font-size:28px;font-style:italic;font-weight:500"><b>Statistik</b> ${state.year}</h1>
@@ -3235,6 +3398,24 @@ function renderStats(){
         <div class="amount">${fmtEUR(c.amt)}</div>
         <div class="bar-track"><div style="width:${(c.amt/maxContact*100).toFixed(0)}%"></div></div>
       </div>`).join('')}</div></div>`:''}
+    ${rcQuarterStats.length?`<div class="card"><div class="section-title">Zusammenfassende Meldung (ZM) ${state.year}</div>
+      <div style="font-size:13px;color:var(--ink-muted);margin-bottom:14px;line-height:1.5">
+        Diese innergemeinschaftlichen sonstigen Leistungen mit Reverse Charge müssen ans Bundeszentralamt für Steuern gemeldet werden — entweder monatlich oder quartalsweise per ELSTER. Pro USt-IdNr. eine Zeile mit Summe der Netto-Beträge.
+      </div>
+      ${rcQuarterStats.map(qs=>{
+        const dueMonths={1:[4,state.year],2:[7,state.year],3:[10,state.year],4:[1,state.year+1]};
+        const due=`25.${String(dueMonths[qs.q][0]).padStart(2,'0')}.${dueMonths[qs.q][1]}`;
+        return `<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;font-weight:600;margin-bottom:6px"><span>Q${qs.q}/${state.year}</span><span style="font-size:11px;color:var(--ink-muted);font-weight:400">Abgabefrist: ${due}</span></div>
+        <div style="background:var(--bg-sunk);padding:8px 10px;border-radius:6px;font-size:12.5px">
+          ${qs.items.map(x=>`<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:4px 0;border-bottom:1px dashed rgba(0,0,0,0.07)">
+            <div><strong>${escapeHtml(x.vatId)}</strong> <span style="color:var(--ink-muted)">· ${escapeHtml(x.name)}</span><br><span style="font-size:11px;color:var(--ink-muted)">${x.count} Rechnung${x.count===1?'':'en'} · ${x.invoices.slice(0,3).join(', ')}${x.invoices.length>3?` … +${x.invoices.length-3}`:''}</span></div>
+            <div style="font-variant-numeric:tabular-nums;font-weight:600">${fmtEUR(x.total)}</div>
+          </div>`).join('')}
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 0 2px 0;margin-top:4px;font-weight:600;border-top:1px solid var(--ink)"><span>Quartals-Summe</span><span style="font-variant-numeric:tabular-nums">${fmtEUR(qs.total)}</span></div>
+        </div></div>`;
+      }).join('')}
+      <div class="hint" style="margin-top:8px">Hankebuch ersetzt keine ELSTER-Meldung. Du musst die ZM selbst über das BZSt-Online-Portal oder ELSTER einreichen.</div>
+    </div>`:''}
     ${vendorStats.length?`<div class="card"><div class="section-title">Marketplace-Anbieter ${state.year}</div>
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi"><div class="k-label">Umsatz gesamt</div><div class="k-value">${fmtEUR(vendorTotalGross)}</div><div class="k-sub">${vendorStats.length} aktive Anbieter</div></div>
@@ -3310,6 +3491,32 @@ function generateDeadlines(year,settings){
   const py=year-1;
   if(settings.hasTaxAdvisor)out.push({date:`${year+1}-02-28`,title:`Steuererklärung ${py} (mit Berater)`,description:`Verlängerte Abgabefrist ${py}.`});
   else out.push({date:`${year}-07-31`,title:`Steuererklärung ${py}`,description:`Abgabefrist ${py}.`});
+
+  // ZM-Erinnerungen: nur für Quartale mit Reverse-Charge-Umsätzen
+  const yearRcInvoices=state.invoices.filter(i=>i.reverseCharge && (i.invoiceDate||'').startsWith(String(year)));
+  const rcByQuarter={1:[],2:[],3:[],4:[]};
+  yearRcInvoices.forEach(i=>{
+    let refDate=i.invoiceDate||'';
+    if(i.status==='paid'&&i.txId){
+      const tx=state.transactions.find(t=>t.id===i.txId);
+      if(tx)refDate=tx.date;
+    }
+    const q=quarterOf(refDate);
+    if(q&&rcByQuarter[q])rcByQuarter[q].push(i);
+  });
+  const zmDueDates={1:[`${year}-04-25`,'Q1'],2:[`${year}-07-25`,'Q2'],3:[`${year}-10-25`,'Q3'],4:[`${year+1}-01-25`,'Q4']};
+  [1,2,3,4].forEach(q=>{
+    if(rcByQuarter[q].length){
+      const [date,label]=zmDueDates[q];
+      const totalNet=rcByQuarter[q].reduce((s,i)=>s+(i.totalNet||i.totalGross||0),0);
+      out.push({
+        date,
+        title:`Zusammenfassende Meldung ${label}/${year}`,
+        description:`${rcByQuarter[q].length} Reverse-Charge-Umsätze · Netto-Summe ${fmtEUR(totalNet)}. Abgabe über BZSt-Online-Portal (bop.bzst.bund.de) oder ELSTER.`,
+      });
+    }
+  });
+
   return out;
 }
 
