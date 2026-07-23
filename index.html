@@ -5058,20 +5058,20 @@ function handleAction(e){
     // Rental-Actions
     case 'new-property':openPropertyModal();break;
     case 'edit-property':openPropertyModal(id);break;
-    case 'save-property':savePropertyFromModal(id, !!btn.dataset.new);break;
+    case 'save-property':savePropertyFromModal(id, !!e.currentTarget.dataset.new);break;
     case 'delete-property':deletePropertyConfirm(id);break;
     case 'new-rental-income':openRentalTxModal('income');break;
     case 'new-rental-expense':openRentalTxModal('expense');break;
-    case 'save-rental-tx':saveRentalTxFromModal(id, btn.dataset.type, !!btn.dataset.new);break;
+    case 'save-rental-tx':saveRentalTxFromModal(id, e.currentTarget.dataset.type, !!e.currentTarget.dataset.new);break;
     case 'delete-rental-tx':deleteRentalTxConfirm(id);break;
     case 'new-loan':openLoanModal();break;
-    case 'save-loan':saveLoanFromModal(id, !!btn.dataset.new);break;
+    case 'save-loan':saveLoanFromModal(id, !!e.currentTarget.dataset.new);break;
     case 'delete-loan':deleteLoanConfirm(id);break;
     case 'new-loan-payment':openLoanPaymentModal();break;
-    case 'save-loan-payment':saveLoanPaymentFromModal(id, !!btn.dataset.new);break;
+    case 'save-loan-payment':saveLoanPaymentFromModal(id, !!e.currentTarget.dataset.new);break;
     case 'delete-loan-payment':deleteLoanPaymentConfirm(id);break;
     case 'new-asset':openAssetModal();break;
-    case 'save-asset':saveAssetFromModal(id, !!btn.dataset.new);break;
+    case 'save-asset':saveAssetFromModal(id, !!e.currentTarget.dataset.new);break;
     case 'delete-asset':deleteAssetConfirm(id);break;
     case 'export-rental-csv':exportRentalCSV();break;
     case 'export-euer':exportEUER(state.year);toast('EÜR-Export heruntergeladen');break;
