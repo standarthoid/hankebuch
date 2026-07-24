@@ -3716,10 +3716,12 @@ function renderRentalEmpty(){
 
 function renderRentalTxRow(t){
   const ebBadge=t.eigenbeleg?` <span style="display:inline-block;padding:1px 6px;background:rgba(184,154,90,0.18);color:#876b30;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.04em;margin-left:4px;vertical-align:1px">EIGENBELEG</span>`:'';
+  const hasReceipts=(t.receiptIds||[]).length>0;
+  const clip=hasReceipts?`<span class="paperclip">${ICON.paper}${t.receiptIds.length}</span>`:'';
   return `<div class="tx-item ${t.type}" data-edit-rental-tx="${t.id}" style="cursor:pointer">
     <div class="tx-dot"></div>
     <div class="tx-main">
-      <div class="tx-desc">${escapeHtml(t.description||t.category||'')}${ebBadge}</div>
+      <div class="tx-desc">${escapeHtml(t.description||t.category||'')}${clip}${ebBadge}</div>
       <div class="tx-meta"><span>${fmtDate(t.date)}</span><span class="sep">·</span><span class="cat-chip">${escapeHtml(t.category||'')}</span></div>
     </div>
     <div class="tx-amount">${fmtEUR(t.amount, {signed:t.type==='income'})}<span class="sub">${t.type==='income'?'Einnahme':'Ausgabe'}</span></div>
@@ -4023,6 +4025,8 @@ async function deletePropertyConfirm(id){
 function openRentalTxModal(type, editId=null){
   const prop=activeProperty();
   if(!prop){toast('Bitte zuerst eine Immobilie anlegen');return;}
+  state.pendingReceipts=[];
+  state._removedReceipts=[];
   const existing=editId?state.rentalTx.find(t=>t.id===editId):null;
   const t=existing||{
     id:uid('rtx'),
@@ -4033,9 +4037,12 @@ function openRentalTxModal(type, editId=null){
     amount:0,
     description:'',
     notes:'',
+    receiptIds:[],
   };
   const cats=type==='income'?RENTAL_INCOME_CATEGORIES:RENTAL_EXPENSE_CATEGORIES;
   const isEdit=!!editId;
+  const attached=(t.receiptIds||[]).map(rid=>({id:rid,loading:true}));
+  const pending=state.pendingReceipts||[];
   document.getElementById('modal-root').innerHTML=`<div class="modal-overlay" data-close-modal><div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head"><h2>${isEdit?'Buchung bearbeiten':(type==='income'?'Neue Miete/Einnahme':'Neue Ausgabe')}</h2><button class="modal-close" data-close-modal>${ICON.close}</button></div>
     <div class="stack">
@@ -4046,6 +4053,14 @@ function openRentalTxModal(type, editId=null){
       </div>
       <div class="field"><label>Betrag (€)</label><input type="text" inputmode="decimal" class="num-input" id="rt-amount" value="${t.amount?String(t.amount).replace('.',','):''}" placeholder="0,00"></div>
       <div class="field"><label>Notizen</label><textarea id="rt-notes">${escapeHtml(t.notes||'')}</textarea></div>
+      <div class="field"><label>Belege</label>
+        <div class="receipt-zone" id="drop-zone">
+          <div class="rz-big">Belege hier ablegen oder antippen</div>
+          <div class="rz-small">PDF, Fotos, Scans · max. 8 MB pro Datei</div>
+          <input type="file" id="receipt-file" accept="image/*,application/pdf" multiple style="display:none">
+        </div>
+        <div class="receipt-grid" id="receipt-grid">${[...attached,...pending].map((r,i)=>renderReceiptThumb(r,i,pending.includes(r))).join('')}</div>
+      </div>
       ${type==='expense'?`
         <div class="field">
           <label class="toggle" style="padding:6px 0;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -4089,11 +4104,24 @@ function openRentalTxModal(type, editId=null){
       if(box)box.style.display=ebToggle.checked?'block':'none';
     });
   }
+  // Beleg-Upload
+  const zone=document.getElementById('drop-zone');
+  const fi=document.getElementById('receipt-file');
+  if(zone&&fi){
+    zone.addEventListener('click',()=>fi.click());
+    fi.addEventListener('change',e=>handleReceiptFiles(Array.from(e.target.files)));
+    zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag');});
+    zone.addEventListener('dragleave',()=>zone.classList.remove('drag'));
+    zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag');const files=Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/')||f.type==='application/pdf');handleReceiptFiles(files);});
+  }
+  bindReceiptGridEvents();
+  hydrateReceiptThumbs();
 }
 
 async function saveRentalTxFromModal(id, type, isNew){
   const get=k=>document.getElementById(k)?.value||'';
   const isChecked=k=>document.getElementById(k)?.checked||false;
+  const existing=state.rentalTx.find(t=>t.id===id);
   const data={
     id,
     propertyId:state.activePropertyId,
@@ -4103,6 +4131,7 @@ async function saveRentalTxFromModal(id, type, isNew){
     amount:parseAmount(get('rt-amount')),
     description:get('rt-desc').trim(),
     notes:get('rt-notes').trim(),
+    receiptIds:existing?[...(existing.receiptIds||[])]:[],
   };
   if(!data.amount){toast('Bitte einen Betrag eingeben');return;}
   // Eigenbeleg-Daten für Ausgaben
@@ -4121,13 +4150,33 @@ async function saveRentalTxFromModal(id, type, isNew){
       createdAt:new Date().toISOString(),
     };
   }
+  // Entfernte Belege aus Storage löschen
+  if(state._removedReceipts&&state._removedReceipts.length){
+    for(const rid of state._removedReceipts){
+      data.receiptIds=data.receiptIds.filter(x=>x!==rid);
+      await deleteReceiptStore(rid);
+    }
+  }
+  // Neue (pending) Belege speichern und ID an data.receiptIds anhängen
+  if(state.pendingReceipts&&state.pendingReceipts.length){
+    for(const p of state.pendingReceipts){
+      if(p._originalFile){
+        try{
+          const rec=await saveReceipt(id, p._originalFile);
+          data.receiptIds.push(rec.id);
+        }catch(e){console.warn('Beleg konnte nicht gespeichert werden:',e);}
+      }
+    }
+  }
   if(isNew){state.rentalTx.push(data);}
   else {
     const idx=state.rentalTx.findIndex(t=>t.id===id);
     if(idx>=0)state.rentalTx[idx]=data;
   }
   await saveRentalTx();
-  toast(data.eigenbeleg?'Gespeichert mit Eigenbeleg':'Gespeichert');
+  state.pendingReceipts=[];
+  state._removedReceipts=[];
+  toast(data.eigenbeleg?'Gespeichert mit Eigenbeleg':`Gespeichert${data.receiptIds.length?' · '+data.receiptIds.length+' Beleg(e)':''}`);
   closeModal();
   render();
   // Bei neuer Buchung mit Eigenbeleg: gleich das PDF anzeigen
@@ -4138,6 +4187,10 @@ async function saveRentalTxFromModal(id, type, isNew){
 
 async function deleteRentalTxConfirm(id){
   if(!confirm('Buchung wirklich löschen?'))return;
+  const tx=state.rentalTx.find(t=>t.id===id);
+  if(tx&&tx.receiptIds){
+    for(const rid of tx.receiptIds){await deleteReceiptStore(rid);}
+  }
   state.rentalTx=state.rentalTx.filter(t=>t.id!==id);
   await saveRentalTx();
   toast('Gelöscht');
@@ -4474,15 +4527,15 @@ function exportRentalCSV(){
   rows.push([`Erstellt am: ${new Date().toLocaleString('de-DE')}`]);
   rows.push([]);
   rows.push(['=== EINNAHMEN ===']);
-  rows.push(['Datum','Kategorie','Beschreibung','Betrag','Notizen']);
+  rows.push(['Datum','Kategorie','Beschreibung','Betrag','Belege','Notizen']);
   const income=tx.filter(t=>t.type==='income').sort((a,b)=>a.date.localeCompare(b.date));
-  income.forEach(t=>rows.push([t.date,t.category,t.description,toCsvNum(t.amount),(t.notes||'').replace(/\n/g,' ')]));
+  income.forEach(t=>rows.push([t.date,t.category,t.description,toCsvNum(t.amount),(t.receiptIds||[]).length+' Beleg(e)',(t.notes||'').replace(/\n/g,' ')]));
   rows.push(['','','Summe Einnahmen',toCsvNum(income.reduce((s,t)=>s+t.amount,0))]);
   rows.push([]);
   rows.push(['=== AUSGABEN (Werbungskosten) ===']);
-  rows.push(['Datum','Kategorie','Beschreibung','Betrag','Notizen']);
+  rows.push(['Datum','Kategorie','Beschreibung','Betrag','Belege','Eigenbeleg','Notizen']);
   const expense=tx.filter(t=>t.type==='expense').sort((a,b)=>a.date.localeCompare(b.date));
-  expense.forEach(t=>rows.push([t.date,t.category,t.description,toCsvNum(t.amount),(t.notes||'').replace(/\n/g,' ')]));
+  expense.forEach(t=>rows.push([t.date,t.category,t.description,toCsvNum(t.amount),(t.receiptIds||[]).length+' Beleg(e)',t.eigenbeleg?'ja':'',(t.notes||'').replace(/\n/g,' ')]));
   rows.push(['','','Summe Ausgaben',toCsvNum(expense.reduce((s,t)=>s+t.amount,0))]);
   rows.push([]);
   if(loan){
