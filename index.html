@@ -935,17 +935,19 @@ function renderHeader(){
   return `<header class="app-header">
     <div class="brand"><div class="logo">H<b>anke</b>buch</div><div class="tag">${escapeHtml(tagText)}</div></div>
     <div class="header-right">
-      <div class="mode-switch" style="display:inline-flex;background:var(--bg-sunk);border-radius:999px;padding:3px;margin-right:8px;font-size:11px;font-weight:600;letter-spacing:0.02em">
-        <button data-mode-set="business" style="border:none;background:${!isRental?'var(--ink)':'transparent'};color:${!isRental?'var(--bg-card)':'var(--ink-muted)'};padding:5px 12px;border-radius:999px;cursor:pointer;font-weight:600">Business</button>
-        <button data-mode-set="rental" style="border:none;background:${isRental?'var(--ink)':'transparent'};color:${isRental?'var(--bg-card)':'var(--ink-muted)'};padding:5px 12px;border-radius:999px;cursor:pointer;font-weight:600">Immobilie</button>
-      </div>
       <span id="sync-indicator" style="font-size:11px;font-weight:600;letter-spacing:0.04em;margin-right:6px"></span>
       <label class="yearpick"><span style="opacity:0.5">◇</span>
         <select id="year-select">${years.map(y=>`<option value="${y}" ${y===state.year?'selected':''}>${y}</option>`).join('')}</select>
       </label>
       <button class="btn btn-ghost btn-icon" id="btn-settings">${ICON.settings}</button>
     </div>
-  </header>`;
+  </header>
+  <div class="mode-bar" style="display:flex;justify-content:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:9">
+    <div style="display:inline-flex;background:var(--bg-sunk);border-radius:999px;padding:3px;font-size:12px;font-weight:600;letter-spacing:0.02em;gap:2px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+      <button data-mode-set="business" style="border:none;background:${!isRental?'var(--ink)':'transparent'};color:${!isRental?'var(--bg-card)':'var(--ink-muted)'};padding:8px 22px;border-radius:999px;cursor:pointer;font-weight:600;transition:all 0.15s;font-size:12px">Business</button>
+      <button data-mode-set="rental" style="border:none;background:${isRental?'var(--ink)':'transparent'};color:${isRental?'var(--bg-card)':'var(--ink-muted)'};padding:8px 22px;border-radius:999px;cursor:pointer;font-weight:600;transition:all 0.15s;font-size:12px">Immobilie</button>
+    </div>
+  </div>`;
 }
 function renderBottomNav(){
   const views=state.mode==='rental'?VIEWS_RENTAL:VIEWS;
@@ -3713,10 +3715,11 @@ function renderRentalEmpty(){
 }
 
 function renderRentalTxRow(t){
+  const ebBadge=t.eigenbeleg?` <span style="display:inline-block;padding:1px 6px;background:rgba(184,154,90,0.18);color:#876b30;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.04em;margin-left:4px;vertical-align:1px">EIGENBELEG</span>`:'';
   return `<div class="tx-item ${t.type}" data-edit-rental-tx="${t.id}" style="cursor:pointer">
     <div class="tx-dot"></div>
     <div class="tx-main">
-      <div class="tx-desc">${escapeHtml(t.description||t.category||'')}</div>
+      <div class="tx-desc">${escapeHtml(t.description||t.category||'')}${ebBadge}</div>
       <div class="tx-meta"><span>${fmtDate(t.date)}</span><span class="sep">·</span><span class="cat-chip">${escapeHtml(t.category||'')}</span></div>
     </div>
     <div class="tx-amount">${fmtEUR(t.amount, {signed:t.type==='income'})}<span class="sub">${t.type==='income'?'Einnahme':'Ausgabe'}</span></div>
@@ -4043,17 +4046,54 @@ function openRentalTxModal(type, editId=null){
       </div>
       <div class="field"><label>Betrag (€)</label><input type="text" inputmode="decimal" class="num-input" id="rt-amount" value="${t.amount?String(t.amount).replace('.',','):''}" placeholder="0,00"></div>
       <div class="field"><label>Notizen</label><textarea id="rt-notes">${escapeHtml(t.notes||'')}</textarea></div>
+      ${type==='expense'?`
+        <div class="field">
+          <label class="toggle" style="padding:6px 0;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="rt-eigenbeleg" ${t.eigenbeleg?'checked':''}>
+            <span class="switch"></span>
+            <span class="label"><div class="t" style="font-size:13px;font-weight:600">Eigenbeleg erstellen</div><div class="sub" style="font-size:11.5px;color:var(--ink-muted)">Wenn Original-Beleg fehlt (verloren, Automat, Privatkauf). PDF wird beim Speichern erzeugt.</div></span>
+          </label>
+        </div>
+        <div id="eigenbeleg-fields" style="${t.eigenbeleg?'':'display:none'}background:var(--bg-sunk);padding:10px 12px;border-radius:8px">
+          <div class="field"><label>Empfänger der Zahlung *</label>
+            <input type="text" id="rt-eb-recipient" value="${escapeAttr(t.eigenbelegData?.recipient||'')}" placeholder="z.B. Shell Tankstelle, Heizöl-Müller GmbH">
+          </div>
+          <div class="field"><label>Genauer Zweck / Anlass *</label>
+            <input type="text" id="rt-eb-purpose" value="${escapeAttr(t.eigenbelegData?.purpose||'')}" placeholder="z.B. 800 L Heizöl EL für Wohnung Musterstraße 12">
+            <div class="hint">So konkret wie möglich — Menge, Zweck, Objekt.</div>
+          </div>
+          <div class="field"><label>Grund für Eigenbeleg *</label>
+            <select id="rt-eb-reason">
+              <option value="verloren" ${(t.eigenbelegData?.reason||'verloren')==='verloren'?'selected':''}>Original-Beleg verloren</option>
+              <option value="automat" ${t.eigenbelegData?.reason==='automat'?'selected':''}>Automat/Verkaufsstelle ohne Beleg</option>
+              <option value="privat-gekauft" ${t.eigenbelegData?.reason==='privat-gekauft'?'selected':''}>Privat gekauft, für Vermietung verwendet</option>
+              <option value="sonstiges" ${t.eigenbelegData?.reason==='sonstiges'?'selected':''}>Sonstiges (in Notiz)</option>
+            </select>
+          </div>
+          <div class="hint" style="margin-top:6px"><strong>Rechtlicher Hinweis:</strong> Ein Eigenbeleg ist eine Notlösung. Bei einer Prüfung akzeptiert das Finanzamt ihn, wenn plausibel und dokumentiert. Bei Beträgen &gt; 250 € und regelmäßig auftretenden Ausgaben ist ein Original-Beleg vorzuziehen.</div>
+        </div>
+      `:''}
       <div style="display:flex;gap:8px">
         ${isEdit?`<button class="btn" data-action="delete-rental-tx" data-id="${t.id}" style="color:var(--terra);border-color:var(--terra)">${ICON.trash}</button>`:''}
+        ${isEdit&&t.eigenbeleg?`<button class="btn" data-action="print-eigenbeleg" data-id="${t.id}">${ICON.print} Eigenbeleg drucken</button>`:''}
         <button class="btn btn-primary btn-block" data-action="save-rental-tx" data-id="${t.id}" data-type="${type}" ${isEdit?'':'data-new="1"'}>${isEdit?'Speichern':'Buchen'}</button>
       </div>
     </div>
   </div></div>`;
   bindModal();
+  // Toggle-Handler für Eigenbeleg-Sektion
+  const ebToggle=document.getElementById('rt-eigenbeleg');
+  if(ebToggle){
+    ebToggle.addEventListener('change',()=>{
+      const box=document.getElementById('eigenbeleg-fields');
+      if(box)box.style.display=ebToggle.checked?'block':'none';
+    });
+  }
 }
 
 async function saveRentalTxFromModal(id, type, isNew){
   const get=k=>document.getElementById(k)?.value||'';
+  const isChecked=k=>document.getElementById(k)?.checked||false;
   const data={
     id,
     propertyId:state.activePropertyId,
@@ -4065,14 +4105,35 @@ async function saveRentalTxFromModal(id, type, isNew){
     notes:get('rt-notes').trim(),
   };
   if(!data.amount){toast('Bitte einen Betrag eingeben');return;}
+  // Eigenbeleg-Daten für Ausgaben
+  if(type==='expense' && isChecked('rt-eigenbeleg')){
+    const purpose=get('rt-eb-purpose').trim();
+    const recipient=get('rt-eb-recipient').trim();
+    if(!purpose||!recipient){
+      toast('Für Eigenbeleg bitte Empfänger und Zweck ausfüllen');
+      return;
+    }
+    data.eigenbeleg=true;
+    data.eigenbelegData={
+      recipient,
+      purpose,
+      reason:get('rt-eb-reason')||'verloren',
+      createdAt:new Date().toISOString(),
+    };
+  }
   if(isNew){state.rentalTx.push(data);}
   else {
     const idx=state.rentalTx.findIndex(t=>t.id===id);
     if(idx>=0)state.rentalTx[idx]=data;
   }
   await saveRentalTx();
-  toast('Gespeichert');
-  closeModal();render();
+  toast(data.eigenbeleg?'Gespeichert mit Eigenbeleg':'Gespeichert');
+  closeModal();
+  render();
+  // Bei neuer Buchung mit Eigenbeleg: gleich das PDF anzeigen
+  if(isNew && data.eigenbeleg){
+    setTimeout(()=>printEigenbeleg(data.id),300);
+  }
 }
 
 async function deleteRentalTxConfirm(id){
@@ -4081,6 +4142,84 @@ async function deleteRentalTxConfirm(id){
   await saveRentalTx();
   toast('Gelöscht');
   closeModal();render();
+}
+
+function printEigenbeleg(txId){
+  const t=state.rentalTx.find(x=>x.id===txId);
+  if(!t||!t.eigenbeleg){toast('Kein Eigenbeleg vorhanden');return;}
+  const prop=state.properties.find(p=>p.id===t.propertyId);
+  const eb=t.eigenbelegData||{};
+  const s=state.settings;
+  const reasonLabels={
+    'verloren':'Original-Rechnung nicht mehr auffindbar (verloren)',
+    'automat':'Kauf am Automaten/an Verkaufsstelle ohne Belegausgabe',
+    'privat-gekauft':'Privat gekauft, nachträglich der Vermietung zugeordnet',
+    'sonstiges':'Sonstiges (siehe Notiz)',
+  };
+  const reason=reasonLabels[eb.reason]||eb.reason||'—';
+  const createdDate=eb.createdAt?fmtDate(eb.createdAt.slice(0,10)):todayISO();
+  const win=window.open('','_blank');
+  if(!win){toast('Pop-up-Blocker verhindert die Anzeige');return;}
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Eigenbeleg ${escapeHtml(t.description||'')}</title>
+    <style>
+      @page{size:A4;margin:2.5cm}
+      body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#222;font-size:11pt;line-height:1.55;max-width:16cm;margin:0 auto;padding:20mm 0}
+      h1{font-size:22pt;font-weight:600;margin:0 0 6px 0;letter-spacing:-0.5px}
+      .subtitle{color:#888;font-size:11pt;margin-bottom:32px;font-style:italic}
+      .box{background:#f4efe2;border-left:3px solid #b89a5a;padding:14px 18px;border-radius:4px;margin:20px 0;font-size:10pt}
+      table{width:100%;border-collapse:collapse;margin:24px 0}
+      td{padding:9px 4px;border-bottom:1px solid #e5e0d3;vertical-align:top}
+      td.label{color:#666;font-size:9.5pt;width:38%;text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+      td.value{font-size:11pt}
+      td.value strong{font-size:14pt;font-weight:600}
+      .amount{background:#f8f5eb;padding:16px 20px;border-radius:4px;margin:24px 0;display:flex;justify-content:space-between;align-items:baseline}
+      .amount-label{font-size:11pt;color:#666}
+      .amount-value{font-size:22pt;font-weight:700;font-variant-numeric:tabular-nums}
+      .footer{margin-top:44px;padding-top:24px;border-top:1px solid #ddd;font-size:9.5pt;color:#666;line-height:1.6}
+      .signature{margin-top:60px;border-top:1px solid #444;width:60%;padding-top:6px;font-size:9pt;color:#666}
+      .legal{font-size:8.5pt;color:#999;margin-top:32px;font-style:italic;line-height:1.5}
+      @media print{body{padding:0}}
+    </style>
+  </head><body>
+
+    <h1>Eigenbeleg</h1>
+    <div class="subtitle">Ersatzbeleg für fehlende Original-Rechnung</div>
+
+    <div class="box">
+      <strong>Grund:</strong> ${escapeHtml(reason)}
+    </div>
+
+    <table>
+      <tr><td class="label">Datum der Zahlung</td><td class="value"><strong>${fmtDate(t.date)}</strong></td></tr>
+      <tr><td class="label">Empfänger der Zahlung</td><td class="value">${escapeHtml(eb.recipient||'—')}</td></tr>
+      <tr><td class="label">Zweck / Anlass</td><td class="value">${escapeHtml(eb.purpose||t.description||'—')}</td></tr>
+      <tr><td class="label">Kategorie</td><td class="value">${escapeHtml(t.category||'—')}</td></tr>
+      ${prop?`<tr><td class="label">Zugehöriges Objekt</td><td class="value">${escapeHtml(prop.name)}${prop.street?`<br>${escapeHtml([prop.street,prop.zip,prop.city].filter(Boolean).join(', '))}`:''}</td></tr>`:''}
+      ${t.notes?`<tr><td class="label">Notizen</td><td class="value">${escapeHtml(t.notes).replace(/\n/g,'<br>')}</td></tr>`:''}
+    </table>
+
+    <div class="amount">
+      <span class="amount-label">Betrag (inkl. USt.)</span>
+      <span class="amount-value">${fmtEUR(t.amount)}</span>
+    </div>
+
+    <div class="footer">
+      <div><strong>Ersteller:</strong> ${escapeHtml(s.ownerName||s.businessName||'')}</div>
+      ${s.street?`<div>${escapeHtml(s.street)}, ${escapeHtml(s.zip||'')} ${escapeHtml(s.city||'')}</div>`:''}
+      <div><strong>Erstellt am:</strong> ${createdDate}</div>
+      <div><strong>Beleg-Nr. (intern):</strong> EB-${t.id.slice(-8).toUpperCase()}</div>
+    </div>
+
+    <div class="signature">Ort, Datum, Unterschrift</div>
+
+    <div class="legal">
+      Ich versichere die sachliche und rechnerische Richtigkeit dieses Eigenbelegs. Die aufgeführte Ausgabe ist tatsächlich entstanden und im angegebenen Zusammenhang mit der Vermietungstätigkeit erfolgt. Ein Original-Beleg liegt aus dem oben genannten Grund nicht vor.
+    </div>
+
+    <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script>
+  </body></html>`);
+  win.document.close();
+  toast('Eigenbeleg wird zum Drucken vorbereitet');
 }
 
 function openLoanModal(id=null){
@@ -5064,6 +5203,7 @@ function handleAction(e){
     case 'new-rental-expense':openRentalTxModal('expense');break;
     case 'save-rental-tx':saveRentalTxFromModal(id, e.currentTarget.dataset.type, !!e.currentTarget.dataset.new);break;
     case 'delete-rental-tx':deleteRentalTxConfirm(id);break;
+    case 'print-eigenbeleg':printEigenbeleg(id);break;
     case 'new-loan':openLoanModal();break;
     case 'save-loan':saveLoanFromModal(id, !!e.currentTarget.dataset.new);break;
     case 'delete-loan':deleteLoanConfirm(id);break;
