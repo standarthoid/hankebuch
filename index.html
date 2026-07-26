@@ -3636,8 +3636,8 @@ function renderRentalDashboard(){
   }
   const year=state.year;
   const tx=rentalTxForYear(year);
-  const income=sumGross(tx.filter(t=>t.type==='income'));
-  const expense=sumGross(tx.filter(t=>t.type==='expense'));
+  const income=round2(tx.filter(t=>t.type==='income').reduce((s,t)=>s+(t.amount||0),0));
+  const expense=round2(tx.filter(t=>t.type==='expense').reduce((s,t)=>s+(t.amount||0),0));
   const balance=round2(income-expense);
   // Kredit-Info
   const loan=state.loans.find(l=>l.propertyId===prop.id);
@@ -3666,7 +3666,7 @@ function renderRentalDashboard(){
     <div class="kpi-grid">
       <div class="kpi income"><div class="k-label">Miet-Einnahmen ${year}</div><div class="k-value">${fmtEUR(income)}</div><div class="k-sub">${tx.filter(t=>t.type==='income').length} Buchungen</div></div>
       <div class="kpi expense"><div class="k-label">Ausgaben ${year}</div><div class="k-value">${fmtEUR(expense)}</div><div class="k-sub">${tx.filter(t=>t.type==='expense').length} Buchungen</div></div>
-      <div class="kpi kpi-profit"><div class="k-label">Cashflow ${year}</div><div class="k-value">${fmtEUR(balance,{signed:true})}</div><div class="k-sub">Einnahmen 0,00 € · Ausgaben 0,00 €</div></div>
+      <div class="kpi kpi-profit"><div class="k-label">Cashflow ${year}</div><div class="k-value">${fmtEUR(balance,{signed:true})}</div><div class="k-sub">Einnahmen ${fmtEUR(income)} · Ausgaben ${fmtEUR(expense)}</div></div>
     </div>
 
     <div class="quick-actions">
